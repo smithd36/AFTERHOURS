@@ -1,10 +1,8 @@
-from __future__ import annotations
-
 from pydantic import Field
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
-class CoinbaseFeedSettings(BaseSettings):
+class KrakenFeedSettings(BaseSettings):
     model_config = SettingsConfigDict(
         env_file=".env",
         env_file_encoding="utf-8",
@@ -13,11 +11,12 @@ class CoinbaseFeedSettings(BaseSettings):
     )
 
     ws_url: str = Field(
-        default="wss://advanced-trade-ws.coinbase.com/ws",
-        alias="COINBASE_WS_URL",
+        default="wss://ws.kraken.com/v2",
+        alias="KRAKEN_WS_URL",
     )
-    # Env var format: COINBASE_PRODUCTS=["BTC-USD","ETH-USD"]  (JSON array)
+    # Canonical format: KRAKEN_PRODUCTS=["BTC-USD","ETH-USD"]
+    # Converted to Kraken format (BTC/USD) internally before subscribing.
     products: list[str] = Field(
         default=["BTC-USD", "ETH-USD"],
-        alias="COINBASE_PRODUCTS",
+        alias="KRAKEN_PRODUCTS",
     )

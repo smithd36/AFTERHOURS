@@ -8,10 +8,13 @@ A modular monolith that connects live market data, LLM-generated trade theses, a
 
 ## Status
 
-**Phase 0 complete.** Live market data (Coinbase BTC-USD / ETH-USD) flows end-to-end:
+**Phase 1 complete.** Live market data and signals flow end-to-end:
 
 ```
-Coinbase WebSocket → InProcessBus → SQLiteEventStore → FastAPI /ws → React terminal
+Kraken WebSocket → InProcessBus → SQLiteEventStore → FastAPI /ws → React terminal
+                                        ↑
+              PriceAlertGenerator (ticks → signal.created)
+              RSSNewsFeed         (CoinDesk / CoinTelegraph → signal.created)
 ```
 
 ---
@@ -125,15 +128,18 @@ afterhours/
 │   ├── bus/                # InProcessBus, EventStore protocol, adapters
 │   └── db/                 # aiosqlite connection, migration runner
 │
-├── ingestion/              # Market data feeds
-│   └── coinbase/           # Coinbase Advanced Trade WebSocket (public)
+├── ingestion/              # Market data feeds and signal generators
+│   ├── kraken/             # Kraken WebSocket v2 (primary, no auth)
+│   ├── coinbase/           # Coinbase Advanced Trade (deferred until Phase 4)
+│   ├── alerts/             # PriceAlertGenerator — tick → signal.created
+│   └── news/               # RSS feed poller (CoinDesk, CoinTelegraph)
 │
 ├── gateway/                # FastAPI app — HTTP + WebSocket gateway
 │
 ├── frontend/               # React terminal UI
 │   └── src/
-│       ├── components/     # UI components (panels, layout)
-│       ├── hooks/          # useEventStream, useMarketTicks
+│       ├── components/     # UI components — MarketWatch, SignalFeed, PanelShell
+│       ├── hooks/          # useEventStream, useMarketTicks, useSignals
 │       └── types/          # TypeScript mirror of core/schemas
 │
 ├── tests/                  # pytest test suite
@@ -156,7 +162,7 @@ afterhours/
 
 **Autonomy is graduated.** Five modes — Observe → Paper → Assisted → Semi-auto → Supervised — with explicit promotion criteria and automatic demotion triggers. Kill switch available at all times.
 
-**Free data first.** All external data is behind adapters. Phase 0 uses Coinbase public WebSocket (no API key needed). The upgrade door is open.
+**Free data first.** All external data is behind adapters. Phases 0–3 use Kraken WebSocket v2 (no API key needed). Coinbase is preserved and ready; auth wiring deferred to Phase 4.
 
 See [`PLANNING.md`](PLANNING.md) for the full non-negotiables list.
 
@@ -167,7 +173,7 @@ See [`PLANNING.md`](PLANNING.md) for the full non-negotiables list.
 | Phase | Focus | Key Deliverable |
 |---|---|---|
 | **0** ✅ | Infrastructure | Live ticks end-to-end: exchange → bus → DB → screen |
-| **1** | Signals | News/price-alert ingestion, `Signal` objects on bus |
+| **1** ✅ | Signals | Price alerts + RSS news ingestion, SignalFeed panel |
 | **2** | Thesis | LLM thesis generation, invalidation conditions |
 | **3** | Risk engine | Deterministic sizing, stop-loss gating, kill switch |
 | **4** | Execution | Paper trading, order lifecycle, fill reconciliation |

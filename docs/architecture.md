@@ -22,13 +22,21 @@ The shared kernel. No dependency on any subsystem.
 
 ### `ingestion/`
 
-Market data feeds. Each feed is a `Feed` ABC implementation that runs forever, reconnects on error, and stops cleanly on `asyncio.CancelledError`.
+Market data feeds and signal generators. Feeds run as long-lived async tasks; signal generators subscribe to the bus and react to events.
 
 | Module | Responsibility |
 |---|---|
-| `ingestion/coinbase/feed.py` | Coinbase Advanced Trade public WebSocket, tenacity reconnect |
+| `ingestion/kraken/feed.py` | **Primary feed.** Kraken WebSocket v2, no auth required, tenacity reconnect |
+| `ingestion/kraken/normalizer.py` | Raw Kraken messages → `EventEnvelope(MARKET_TICK)`. Normalises `BTC/USD` → `BTC-USD`. |
+| `ingestion/kraken/settings.py` | `KRAKEN_WS_URL`, `KRAKEN_PRODUCTS` env config |
+| `ingestion/coinbase/feed.py` | Coinbase Advanced Trade WebSocket (requires JWT auth — deferred to Phase 4) |
 | `ingestion/coinbase/normalizer.py` | Raw Coinbase messages → `EventEnvelope(MARKET_TICK)` |
-| `ingestion/coinbase/settings.py` | `COINBASE_WS_URL`, `COINBASE_PRODUCTS` env config |
+| `ingestion/coinbase/settings.py` | `COINBASE_WS_URL`, `COINBASE_PRODUCTS`, `COINBASE_API_KEY` env config |
+| `ingestion/alerts/generator.py` | Subscribes to `market.tick`; emits `signal.created` for 24h crosses and short-window % moves |
+| `ingestion/alerts/settings.py` | `ALERT_PRICE_MOVE_PCT_THRESHOLD`, `ALERT_COOLDOWN_MINUTES` env config |
+| `ingestion/news/feed.py` | Polls RSS feeds (CoinDesk, CoinTelegraph) every 5 min; marks existing items on startup |
+| `ingestion/news/normalizer.py` | RSS entry → `EventEnvelope(SIGNAL_CREATED)` with keyword-based instrument extraction |
+| `ingestion/news/settings.py` | `NEWS_FEED_URLS`, `NEWS_POLL_INTERVAL_SECONDS` env config |
 
 ### `gateway/`
 
@@ -48,7 +56,9 @@ React terminal UI built with Vite, TypeScript, Tailwind CSS v4, and shadcn/ui (n
 |---|---|
 | `hooks/useEventStream.ts` | WS connection to `/ws`, exponential backoff reconnect |
 | `hooks/useMarketTicks.ts` | `useReducer`-backed tick map; dispatches on `market.tick` |
+| `hooks/useSignals.ts` | Accumulates last 50 `signal.created` events; deduplicates by id |
 | `components/panels/MarketWatch.tsx` | Live tick table with bullish/bearish price colouring |
+| `components/panels/SignalFeed.tsx` | Scrollable signal list; PRICE/NEWS badges; relative-age labels |
 | `components/layout/PanelShell.tsx` | Reusable terminal panel (header bar + content slot) |
 | `types/core.ts` | TypeScript mirror of `core/schemas/*.py` |
 
@@ -56,18 +66,17 @@ React terminal UI built with Vite, TypeScript, Tailwind CSS v4, and shadcn/ui (n
 
 ## Data Flow
 
-### Market tick (Phase 0)
+### Market tick (Phase 0–1)
 
 ```
-1. CoinbaseFeed._stream()
-   └─ websockets.connect("wss://advanced-trade-ws.coinbase.com/ws")
-   └─ subscribe({"type":"subscribe","channel":"ticker","product_ids":[...]})
+1. KrakenFeed._stream()
+   └─ websockets.connect("wss://ws.kraken.com/v2")
+   └─ subscribe({"method":"subscribe","params":{"channel":"ticker","symbol":[...]}})
 
-2. CoinbaseNormalizer.normalize(raw_message)
+2. KrakenNormalizer.normalize(raw_message)
    └─ produces EventEnvelope(
         event_type = "market.tick",
-        event_time = parsed venue timestamp,   ← financial clock
-        ingest_time = datetime.now(UTC),        ← our clock
+        event_time = ingest_time = datetime.now(UTC),   ← Kraken has no item timestamp
         payload = { instrument, price, best_bid, best_ask, ... }
       )
 
@@ -75,15 +84,38 @@ React terminal UI built with Vite, TypeScript, Tailwind CSS v4, and shadcn/ui (n
    ├─ SqliteEventStore.append(envelope)         ← persist FIRST
    └─ asyncio.gather(*[handler(envelope) for handler in subscribers])
 
-4. Broadcaster._fanout(envelope)
-   └─ for each connected WebSocket client:
-        client.send_text(envelope.model_dump_json())
+4a. PriceAlertGenerator._handle_tick(envelope)
+    └─ if 24h cross or % move condition met:
+         bus.publish(EventEnvelope(event_type="signal.created", ...))
+
+4b. Broadcaster._fanout(envelope)
+    └─ for each connected WebSocket client:
+         client.send_text(envelope.model_dump_json())
 
 5. useEventStream (browser)
    └─ JSON.parse(event.data) → EventEnvelope
-   └─ dispatch to useMarketTicks if event_type === "market.tick"
+   └─ dispatch to useMarketTicks  if event_type === "market.tick"
+   └─ dispatch to useSignals      if event_type === "signal.created"
 
-6. MarketWatch re-renders with updated tick row
+6. MarketWatch / SignalFeed re-render with updated data
+```
+
+### News signal (Phase 1)
+
+```
+1. NewsFeed._fetch(url)
+   └─ httpx.AsyncClient.get(url) → response text
+   └─ feedparser.parse(text) → feed entries
+
+2. NewsNormalizer.normalize(entry)
+   └─ produces EventEnvelope(
+        event_type = "signal.created",
+        payload = { type="news", title, summary, url, instruments=["BTC-USD",...] }
+      )
+
+3. InProcessBus.publish(envelope)   (same persist-first path as ticks)
+
+4. Broadcaster._fanout → browser → useSignals → SignalFeed panel
 ```
 
 ### Event persistence
@@ -197,7 +229,6 @@ Font stack: Geist Mono → JetBrains Mono → Fira Code → ui-monospace. The te
 
 | Subsystem | Phase | Notes |
 |---|---|---|
-| Signal ingestion | 1 | News feed adapters, price-alert generator |
 | LLM thesis layer | 2 | Thesis creation, invalidation condition tracking |
 | Risk engine | 3 | Deterministic sizing, stop-loss, kill switch |
 | Order execution | 4 | Paper trading first, then live via Coinbase Advanced Trade |

@@ -26,7 +26,7 @@ from gateway.broadcaster import Broadcaster
 
 
 @asynccontextmanager
-async def test_lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
+async def _lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
     store = InMemoryEventStore()
     bus = InProcessBus(store)
     broadcaster = Broadcaster(bus)
@@ -43,7 +43,7 @@ async def test_lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
 
 @pytest.fixture
 def client() -> TestClient:
-    app = create_app(lifespan=test_lifespan)
+    app = create_app(lifespan=_lifespan)
     with TestClient(app) as c:
         yield c
 
@@ -107,9 +107,6 @@ class TestWebSocketEndpoint:
         app = client.app
 
         with client.websocket_connect("/ws") as ws:
-            # Publish directly via the bus that the test lifespan wired up.
-            import asyncio
-
             env = EventEnvelope(
                 event_type=EventType.MARKET_TICK,
                 source="test",
@@ -117,8 +114,8 @@ class TestWebSocketEndpoint:
                 ingest_time=datetime.now(UTC),
                 payload={"instrument": "BTC-USD", "price": "65000.00"},
             )
-            # TestClient runs in a sync context; use asyncio.run to publish.
-            asyncio.get_event_loop().run_until_complete(app.state.bus.publish(env))
+            # Schedule publish on the TestClient's event loop via its anyio portal.
+            client.portal.call(app.state.bus.publish, env)
 
             data = json.loads(ws.receive_text())
             assert data["event_type"] == EventType.MARKET_TICK

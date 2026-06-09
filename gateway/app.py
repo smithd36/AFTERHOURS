@@ -33,7 +33,9 @@ from core.bus import InProcessBus
 from core.bus.store import SqliteEventStore
 from core.db import migrate, open_db
 from core.logging import configure_logging
-from ingestion.coinbase import CoinbaseFeed
+from ingestion.alerts import PriceAlertGenerator
+from ingestion.kraken import KrakenFeed
+from ingestion.news import NewsFeed
 
 from .broadcaster import Broadcaster
 from .settings import GatewaySettings
@@ -60,26 +62,33 @@ async def default_lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
     broadcaster = Broadcaster(bus)
     await broadcaster.start()
 
-    feed = CoinbaseFeed(bus)
-    feed_task = asyncio.create_task(feed.run(), name="coinbase_feed")
+    alert_generator = PriceAlertGenerator(bus)
+    await alert_generator.start()
+
+    feed = KrakenFeed(bus)
+    feed_task = asyncio.create_task(feed.run(), name="kraken_feed")
+
+    news_feed = NewsFeed(bus)
+    news_task = asyncio.create_task(news_feed.run(), name="news_feed")
 
     # Store on app.state so route handlers can access them.
     app.state.bus = bus
     app.state.broadcaster = broadcaster
     app.state.conn = conn
-    app.state.feed_task = feed_task
 
     logger.info("gateway.ready")
     yield  # ← app serves requests here
 
     logger.info("gateway.shutting_down")
 
-    feed_task.cancel()
-    try:
-        await feed_task
-    except asyncio.CancelledError:
-        pass
+    for task in (feed_task, news_task):
+        task.cancel()
+        try:
+            await task
+        except asyncio.CancelledError:
+            pass
 
+    await alert_generator.stop()
     await broadcaster.stop()
     await bus.close()
     await conn.close()

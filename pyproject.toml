@@ -22,6 +22,7 @@ dependencies = [
     # --- networking / feeds ---
     "httpx>=0.27",                # async HTTP for REST news/data APIs
     "websockets>=13.0",           # WebSocket client for exchange feeds
+    "feedparser>=6.0",            # RSS/Atom parsing for the news feed
 
     # --- exchange connectivity ---
     "ccxt>=4.4",                  # normalises 100+ venues; Coinbase + Kraken adapters
@@ -83,7 +84,7 @@ strict = true
 plugins = ["pydantic.mypy"]
 
 [[tool.mypy.overrides]]
-module = ["ccxt.*", "websockets.*"]
+module = ["ccxt.*", "websockets.*", "feedparser.*"]
 ignore_missing_imports = true
 
 # ---------------------------------------------------------------------------

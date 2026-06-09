@@ -1,7 +1,10 @@
 import { cn } from "@/lib/utils";
 import { MarketWatch } from "@/components/panels/MarketWatch";
+import { SignalFeed } from "@/components/panels/SignalFeed";
 import { useEventStream } from "@/hooks/useEventStream";
 import { useMarketTicks } from "@/hooks/useMarketTicks";
+import { useSignals } from "@/hooks/useSignals";
+import type { EventEnvelope } from "@/types/core";
 
 function ConnectionPip({ connected }: { connected: boolean }) {
   return (
@@ -20,7 +23,14 @@ function ConnectionPip({ connected }: { connected: boolean }) {
 }
 
 export default function App() {
-  const { ticks, handleEnvelope } = useMarketTicks();
+  const { ticks, handleEnvelope: handleTick } = useMarketTicks();
+  const { signals, handleEnvelope: handleSignal } = useSignals();
+
+  const handleEnvelope = (envelope: EventEnvelope) => {
+    handleTick(envelope);
+    handleSignal(envelope);
+  };
+
   const { connected } = useEventStream(handleEnvelope);
 
   return (
@@ -33,8 +43,9 @@ export default function App() {
       </header>
 
       <main className="flex-1 overflow-auto p-4">
-        <div className="mx-auto max-w-2xl space-y-3">
+        <div className="mx-auto grid max-w-5xl grid-cols-1 gap-3 lg:grid-cols-2">
           <MarketWatch ticks={ticks} />
+          <SignalFeed signals={signals} />
         </div>
       </main>
     </div>
