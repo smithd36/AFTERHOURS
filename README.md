@@ -179,9 +179,9 @@ See [`PLANNING.md`](PLANNING.md) for the full non-negotiables list.
 | **0** ✅ | Infrastructure | Live ticks end-to-end: exchange → bus → DB → screen |
 | **1** ✅ | Signals | Price alerts + RSS news ingestion, SignalFeed panel |
 | **2** ✅ | Thesis | Pluggable LLM thesis generation, time-based invalidation, ThesisFeed panel |
-| **3** | Risk engine | Deterministic sizing, stop-loss gating, kill switch |
-| **4** | Execution | Paper trading, order lifecycle, fill reconciliation |
-| **5** | Autonomy | Semi-auto mode, ECE measurement, demotion triggers |
+| **3** | Risk + Paper | Decision generator, risk engine, kill switch, paper execution, portfolio/ledger, Decision Queue UI |
+| **4** | Backtest + Live | Backtesting engine, ECE calibration, live Coinbase adapter (Assisted mode only) |
+| **5** | Scale + Autonomy | Equities, semi-auto mode, correlation risk, Strategy Lab |
 
 ---
 

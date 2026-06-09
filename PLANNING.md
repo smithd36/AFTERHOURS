@@ -318,19 +318,19 @@ Each phase ends in something usable and de-risks the next. **No real money until
 - Reasoning engine producing structured Decision Objects in **Observe mode** (shadow only, no execution). RAG context, historical-analogue retrieval, AI Console panel, Decision Feed (display-only).
 - *Exit:* the AI narrates the market and emits well-formed, evidence-cited shadow decisions you can inspect.
 
-### Phase 3 — Simulate (risk + paper execution + backtest)
-- Deterministic **risk engine**, paper execution adapter, portfolio/ledger, **backtesting engine** with point-in-time correctness, calibration reporting. Modes: Observe + Paper + Assisted (approval queue against paper account).
-- *Exit:* full pipeline runs on paper; you can backtest strategies/prompts and measure calibration. **This is the real product before money is at stake.**
+### Phase 3 — Risk + Paper Trading
+- Deterministic **risk engine** (sizing, position limits, per-trade max loss, stop price, kill switch). **Decision Generator** (LLM → full `Decision` object with `prompt_hash`, evidence, confidence). **Paper execution adapter** (simulated fills + realistic slippage). **Portfolio/Ledger** (paper positions, cash, unrealized P&L). **Decision Queue UI panel** (Approve/Reject in Assisted mode). Autonomy modes: Observe + Paper + Assisted.
+- *Exit:* the full Observe → Paper → Assisted pipeline runs end-to-end on paper. The risk engine is the authoritative gatekeeper and the kill switch is always reachable. **No real money yet.**
 
-### Phase 4 — Trade (live, tightly bounded)
-- Live broker/exchange adapters (one crypto exchange first — simpler APIs, 24/7, smaller starting size). Idempotency, reconciliation, hardened secrets, MFA console. **Assisted mode only**, micro position sizes, every order human-approved.
-- *Exit:* small real trades execute correctly, reconcile, and are fully audited. Graduate to Semi-autonomous *only* on demonstrated calibration.
+### Phase 4 — Backtest, Calibration & Live Trading
+- **Backtesting engine** with point-in-time correctness (replay event stream with mock adapters, no look-ahead). **Calibration reporting** (ECE measurement, confidence vs realized outcomes, autonomy gate tracking per Appendix B). **Live broker/exchange adapter** (Coinbase Advanced Trade first — read-only, withdrawal-disabled key, hardened secrets, MFA console). **Assisted mode only** for live trading, micro position sizes, every order human-approved.
+- *Exit:* strategies are backtested and calibration is measurable. Small real trades execute correctly, reconcile against broker ground truth, and are fully audited. Graduate to Semi-autonomous *only* on demonstrated calibration (Appendix B gates).
 
-### Phase 5 — Scale & autonomy
+### Phase 5 — Scale & Autonomy
 - Add equities adapter (market hours, settlement, PDT rules), more venues, multi-instrument theses, Semi-autonomous → Supervised-autonomous modes with bounded envelopes, advanced risk (correlation/portfolio optimization), richer Strategy Lab, A/B of models.
 - *Exit:* multi-market, partially autonomous, still gated and observable.
 
-### Phase 6 — Harden & extend
+### Phase 6 — Harden & Extend
 - Performance, extraction of hot modules to services if needed, advanced observability, optional multi-account, disaster recovery, and the "additional features" of §10 as warranted.
 
 ---

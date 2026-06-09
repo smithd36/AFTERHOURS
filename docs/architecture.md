@@ -260,8 +260,12 @@ Font stack: Geist Mono → JetBrains Mono → Fira Code → ui-monospace. The te
 
 | Subsystem | Phase | Notes |
 |---|---|---|
-| LLM thesis layer | 2 | Thesis creation, invalidation condition tracking |
-| Risk engine | 3 | Deterministic sizing, stop-loss, kill switch |
-| Order execution | 4 | Paper trading first, then live via Coinbase Advanced Trade |
-| Calibration engine | 5 | ECE measurement, autonomy promotion/demotion |
-| Backtest harness | 5 | Replay event stream with mock adapters |
+| Decision generator | 3 | LLM → full Decision Object with prompt_hash, evidence, ModelInfo |
+| Risk engine | 3 | Deterministic sizing, position limits, stop price, kill switch |
+| Paper execution adapter | 3 | Simulated fills with slippage; Observe/Paper/Assisted modes |
+| Portfolio/Ledger | 3 | Paper positions, cash, unrealized P&L against live ticks |
+| Decision Queue UI | 3 | Approve/Reject panel for Assisted mode |
+| Backtest harness | 4 | Point-in-time correct event replay with mock adapters |
+| Calibration engine | 4 | ECE measurement, autonomy gate tracking (Appendix B) |
+| Live exchange adapter | 4 | Coinbase Advanced Trade, read-only key, Assisted mode only |
+| Scale & autonomy | 5 | Equities, semi-auto mode, correlation risk, Strategy Lab |

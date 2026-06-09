@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import os
+
 import pytest
 
 from reasoning.llm import LLMSettings, create_provider
@@ -58,6 +60,8 @@ def test_create_provider_ollama() -> None:
 
 def test_create_provider_anthropic() -> None:
     pytest.importorskip("anthropic")
+    if not os.environ.get("ANTHROPIC_API_KEY"):
+        pytest.skip("ANTHROPIC_API_KEY not set")
     settings = LLMSettings(provider="anthropic", model="claude-haiku-4-5-20251001")
     from reasoning.llm.providers.anthropic import AnthropicProvider
     provider = create_provider(settings)
@@ -66,6 +70,8 @@ def test_create_provider_anthropic() -> None:
 
 def test_create_provider_openai() -> None:
     pytest.importorskip("openai")
+    if not os.environ.get("OPENAI_API_KEY"):
+        pytest.skip("OPENAI_API_KEY not set")
     settings = LLMSettings(provider="openai", model="gpt-4o-mini")
     from reasoning.llm.providers.openai import OpenAIProvider
     provider = create_provider(settings)
@@ -74,6 +80,8 @@ def test_create_provider_openai() -> None:
 
 def test_create_provider_groq() -> None:
     pytest.importorskip("openai")
+    if not os.environ.get("GROQ_API_KEY"):
+        pytest.skip("GROQ_API_KEY not set")
     from reasoning.llm.providers.openai_compatible import OpenAICompatibleProvider
     settings = LLMSettings(provider="groq")
     provider = create_provider(settings)
@@ -82,6 +90,8 @@ def test_create_provider_groq() -> None:
 
 def test_create_provider_mistral() -> None:
     pytest.importorskip("openai")
+    if not os.environ.get("MISTRAL_API_KEY"):
+        pytest.skip("MISTRAL_API_KEY not set")
     from reasoning.llm.providers.openai_compatible import OpenAICompatibleProvider
     settings = LLMSettings(provider="mistral")
     provider = create_provider(settings)
@@ -90,6 +100,8 @@ def test_create_provider_mistral() -> None:
 
 def test_create_provider_openrouter() -> None:
     pytest.importorskip("openai")
+    if not os.environ.get("OPENROUTER_API_KEY"):
+        pytest.skip("OPENROUTER_API_KEY not set")
     from reasoning.llm.providers.openai_compatible import OpenAICompatibleProvider
     settings = LLMSettings(provider="openrouter")
     provider = create_provider(settings)

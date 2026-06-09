@@ -33,13 +33,18 @@ from core.bus import InProcessBus
 from core.bus.store import SqliteEventStore
 from core.db import migrate, open_db
 from core.logging import configure_logging
+from core.schemas.events import AutonomyMode, EventEnvelope, EventType
 from ingestion.alerts import PriceAlertGenerator
 from ingestion.kraken import KrakenFeed
 from ingestion.news import NewsFeed
+from portfolio import PaperExecutor, Portfolio
+from reasoning.decision import DecisionGenerator
 from reasoning.llm import create_provider
 from reasoning.thesis import ThesisGenerator, ThesisInvalidator
+from risk import RiskEngine
 
 from .broadcaster import Broadcaster
+from .routes import decisions_router, halt_router, mode_router, portfolio_router
 from .settings import GatewaySettings
 
 logger = structlog.get_logger(__name__)
@@ -74,6 +79,33 @@ async def default_lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
     thesis_invalidator = ThesisInvalidator(bus)
     await thesis_invalidator.start()
 
+    # Decision store: tracks all decisions by ID for the REST API
+    decision_store: dict[str, Any] = {}
+
+    async def _track_decision(envelope: EventEnvelope) -> None:
+        p = envelope.payload
+        did = p.get("id")
+        if did:
+            decision_store[did] = {**p, "_event_type": envelope.event_type}
+
+    await bus.subscribe(EventType.DECISION_PROPOSED, _track_decision)
+    await bus.subscribe(EventType.DECISION_APPROVED, _track_decision)
+    await bus.subscribe(EventType.DECISION_REJECTED, _track_decision)
+
+    # Phase 3: risk + paper trading pipeline
+    initial_mode = AutonomyMode.OBSERVE
+    portfolio = Portfolio(bus)
+    await portfolio.start()
+
+    risk_engine = RiskEngine(bus, portfolio, initial_mode=initial_mode)
+    await risk_engine.start()
+
+    executor = PaperExecutor(bus, portfolio, initial_mode=initial_mode)
+    await executor.start()
+
+    decision_generator = DecisionGenerator(bus, provider)
+    await decision_generator.start()
+
     feed = KrakenFeed(bus)
     feed_task = asyncio.create_task(feed.run(), name="kraken_feed")
 
@@ -84,6 +116,10 @@ async def default_lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
     app.state.bus = bus
     app.state.broadcaster = broadcaster
     app.state.conn = conn
+    app.state.autonomy_mode = initial_mode
+    app.state.portfolio = portfolio
+    app.state.executor = executor
+    app.state.decision_store = decision_store
 
     logger.info("gateway.ready")
     yield  # ← app serves requests here
@@ -97,6 +133,10 @@ async def default_lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
         except asyncio.CancelledError:
             pass
 
+    await decision_generator.stop()
+    await executor.stop()
+    await risk_engine.stop()
+    await portfolio.stop()
     await thesis_invalidator.stop()
     await thesis_generator.stop()
     await alert_generator.stop()
@@ -136,6 +176,10 @@ def create_app(lifespan: Any = default_lifespan) -> FastAPI:
     )
 
     _register_routes(app)
+    app.include_router(mode_router)
+    app.include_router(decisions_router)
+    app.include_router(portfolio_router)
+    app.include_router(halt_router)
     return app
 
 

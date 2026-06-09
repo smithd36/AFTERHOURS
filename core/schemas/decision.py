@@ -196,8 +196,8 @@ class Decision(BaseModel):
     evidence: list[Evidence]  # must be non-empty; every item cites a real Signal
     confidence: float = Field(ge=0.0, le=1.0)
 
-    # --- risk engine assessment (authoritative) ---
-    risk: RiskAssessment
+    # --- risk engine assessment (authoritative, filled in by risk engine) ---
+    risk: Optional[RiskAssessment] = None
 
     # --- lifecycle ---
     status: DecisionStatus = DecisionStatus.PROPOSED
