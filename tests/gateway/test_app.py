@@ -1,0 +1,125 @@
+"""
+Tests for the FastAPI app — HTTP endpoints and WebSocket route.
+
+Uses a test lifespan that wires up a real InProcessBus + InMemoryEventStore
+but does NOT start the Coinbase feed, so tests run without network access.
+"""
+
+from __future__ import annotations
+
+from collections.abc import AsyncGenerator
+from contextlib import asynccontextmanager
+from typing import Any
+
+import pytest
+from fastapi import FastAPI
+from fastapi.testclient import TestClient
+
+from core.bus import InMemoryEventStore, InProcessBus
+from gateway.app import create_app
+from gateway.broadcaster import Broadcaster
+
+
+# ---------------------------------------------------------------------------
+# Test lifespan — real bus, no feed, no DB
+# ---------------------------------------------------------------------------
+
+
+@asynccontextmanager
+async def test_lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
+    store = InMemoryEventStore()
+    bus = InProcessBus(store)
+    broadcaster = Broadcaster(bus)
+    await broadcaster.start()
+
+    app.state.bus = bus
+    app.state.broadcaster = broadcaster
+
+    yield
+
+    await broadcaster.stop()
+    await bus.close()
+
+
+@pytest.fixture
+def client() -> TestClient:
+    app = create_app(lifespan=test_lifespan)
+    with TestClient(app) as c:
+        yield c
+
+
+# ---------------------------------------------------------------------------
+# Health endpoint
+# ---------------------------------------------------------------------------
+
+
+class TestHealthEndpoint:
+    def test_returns_200(self, client: TestClient) -> None:
+        resp = client.get("/api/health")
+        assert resp.status_code == 200
+
+    def test_status_is_ok(self, client: TestClient) -> None:
+        data = client.get("/api/health").json()
+        assert data["status"] == "ok"
+
+    def test_includes_timestamp(self, client: TestClient) -> None:
+        data = client.get("/api/health").json()
+        assert "timestamp" in data
+
+    def test_timestamp_is_iso8601(self, client: TestClient) -> None:
+        from datetime import datetime
+        ts = client.get("/api/health").json()["timestamp"]
+        datetime.fromisoformat(ts)  # raises if malformed
+
+
+# ---------------------------------------------------------------------------
+# Status endpoint
+# ---------------------------------------------------------------------------
+
+
+class TestStatusEndpoint:
+    def test_returns_200(self, client: TestClient) -> None:
+        assert client.get("/api/status").status_code == 200
+
+    def test_includes_connected_clients(self, client: TestClient) -> None:
+        data = client.get("/api/status").json()
+        assert "connected_clients" in data
+        assert data["connected_clients"] == 0
+
+
+# ---------------------------------------------------------------------------
+# WebSocket endpoint
+# ---------------------------------------------------------------------------
+
+
+class TestWebSocketEndpoint:
+    def test_ws_accepts_connection(self, client: TestClient) -> None:
+        with client.websocket_connect("/ws") as ws:
+            # connection accepted — we can reach here without exception
+            pass
+
+    def test_bus_event_delivered_over_ws(self, client: TestClient) -> None:
+        """Publish to the bus while a client is connected; verify it arrives."""
+        import json
+        from datetime import UTC, datetime
+        from core.schemas import EventEnvelope, EventType
+
+        app = client.app
+
+        with client.websocket_connect("/ws") as ws:
+            # Publish directly via the bus that the test lifespan wired up.
+            import asyncio
+
+            env = EventEnvelope(
+                event_type=EventType.MARKET_TICK,
+                source="test",
+                event_time=datetime.now(UTC),
+                ingest_time=datetime.now(UTC),
+                payload={"instrument": "BTC-USD", "price": "65000.00"},
+            )
+            # TestClient runs in a sync context; use asyncio.run to publish.
+            asyncio.get_event_loop().run_until_complete(app.state.bus.publish(env))
+
+            data = json.loads(ws.receive_text())
+            assert data["event_type"] == EventType.MARKET_TICK
+            assert data["payload"]["instrument"] == "BTC-USD"

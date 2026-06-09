@@ -1,0 +1,131 @@
+# =============================================================================
+# AFTERHOURS — .gitignore
+# =============================================================================
+
+# ---------------------------------------------------------------------------
+# Environment & secrets — never commit these
+# ---------------------------------------------------------------------------
+.env
+.env.*
+!.env.example
+*.pem
+*.key
+*.p12
+*.pfx
+secrets/
+
+# ---------------------------------------------------------------------------
+# Database files (SQLite)
+# ---------------------------------------------------------------------------
+*.db
+*.sqlite
+*.sqlite3
+# SQLite WAL, rollback journal, and shared-memory sidecar files
+*.db-wal
+*.db-shm
+*.db-journal
+*.sqlite-wal
+*.sqlite-shm
+*.sqlite-journal
+
+# ---------------------------------------------------------------------------
+# Python
+# ---------------------------------------------------------------------------
+__pycache__/
+*.py[cod]
+*.pyo
+*.pyd
+*$py.class
+
+# Distribution / packaging
+*.egg-info/
+*.egg
+dist/
+build/
+wheels/
+sdist/
+.eggs/
+
+# Virtual environments
+.venv/
+venv/
+env/
+ENV/
+.python-version
+
+# uv
+.uv/
+uv.lock
+
+# Test & coverage artefacts
+.pytest_cache/
+.coverage
+.coverage.*
+coverage.xml
+htmlcov/
+nosetests.xml
+pytest.ini          # only if auto-generated; ours lives in pyproject.toml
+
+# Type checkers
+.mypy_cache/
+.dmypy.json
+dmypy.json
+.pytype/
+.pyre/
+
+# Linters
+.ruff_cache/
+
+# ---------------------------------------------------------------------------
+# Frontend (Node / Vite)
+# ---------------------------------------------------------------------------
+frontend/node_modules/
+frontend/dist/
+frontend/.vite/
+frontend/.parcel-cache/
+
+# Vite local env overrides (project .env.example is tracked; local overrides are not)
+frontend/.env.local
+frontend/.env.*.local
+
+# npm / yarn / pnpm lock files are useful to commit; don't ignore them.
+# If you use pnpm, add pnpm-lock.yaml to version control instead.
+
+# ---------------------------------------------------------------------------
+# Logs
+# ---------------------------------------------------------------------------
+*.log
+logs/
+*.log.*
+
+# ---------------------------------------------------------------------------
+# IDE & editor
+# ---------------------------------------------------------------------------
+.vscode/settings.json
+.vscode/launch.json
+.vscode/*.code-workspace
+!.vscode/extensions.json    # extensions.json is useful to share
+.idea/
+*.swp
+*.swo
+*~
+.project
+.classpath
+
+# ---------------------------------------------------------------------------
+# OS artefacts
+# ---------------------------------------------------------------------------
+.DS_Store
+.DS_Store?
+._*
+.Spotlight-V100
+.Trashes
+Thumbs.db
+desktop.ini
+ehthumbs.db
+
+# ---------------------------------------------------------------------------
+# Claude Code local config (project-level settings are tracked;
+# session-local overrides are not)
+# ---------------------------------------------------------------------------
+.claude/settings.local.json

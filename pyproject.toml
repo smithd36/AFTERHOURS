@@ -1,0 +1,105 @@
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[project]
+name = "afterhours"
+version = "0.1.0"
+description = "AI-assisted trading terminal"
+requires-python = ">=3.11"
+dependencies = [
+    # --- schemas & config ---
+    "pydantic>=2.9",
+    "pydantic-settings>=2.5",     # config + secrets management
+
+    # --- persistence ---
+    "aiosqlite>=0.20",            # async SQLite driver (local dev); swap for psycopg3 when moving to Postgres
+
+    # --- API gateway ---
+    "fastapi>=0.115",
+    "uvicorn[standard]>=0.32",
+
+    # --- networking / feeds ---
+    "httpx>=0.27",                # async HTTP for REST news/data APIs
+    "websockets>=13.0",           # WebSocket client for exchange feeds
+
+    # --- exchange connectivity ---
+    "ccxt>=4.4",                  # normalises 100+ venues; Coinbase + Kraken adapters
+
+    # --- observability ---
+    "structlog>=24.4",            # structured JSON logging
+
+    # --- utilities ---
+    "python-dotenv>=1.0",
+    "tenacity>=9.0",              # retry / backoff for feed reconnects
+]
+
+[project.optional-dependencies]
+dev = [
+    "pytest>=8.3",
+    "pytest-asyncio>=0.24",
+    "pytest-cov>=5.0,<8.0",
+    "ruff>=0.8",                  # linting + formatting (replaces flake8/black/isort)
+    "mypy>=1.13",
+]
+
+[tool.hatch.build.targets.wheel]
+# Subsystem packages that will grow under the repo root
+packages = [
+    "core",
+    "ingestion",
+    "signals",
+    "reasoning",
+    "risk",
+    "execution",
+    "portfolio",
+    "backtest",
+    "gateway",
+]
+
+# ---------------------------------------------------------------------------
+# Ruff — linting + formatting
+# ---------------------------------------------------------------------------
+[tool.ruff]
+target-version = "py312"
+line-length = 100
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "UP", "B", "SIM", "ANN"]
+ignore = [
+    "ANN101",  # self annotation
+    "ANN102",  # cls annotation
+]
+
+[tool.ruff.lint.per-file-ignores]
+"tests/**" = ["ANN"]
+
+# ---------------------------------------------------------------------------
+# Mypy — type checking
+# ---------------------------------------------------------------------------
+[tool.mypy]
+python_version = "3.11"
+strict = true
+plugins = ["pydantic.mypy"]
+
+[[tool.mypy.overrides]]
+module = ["ccxt.*", "websockets.*"]
+ignore_missing_imports = true
+
+# ---------------------------------------------------------------------------
+# Pytest
+# ---------------------------------------------------------------------------
+[tool.pytest.ini_options]
+asyncio_mode = "auto"
+testpaths = ["tests"]
+addopts = "--cov=core --cov-report=term-missing"
+
+[tool.coverage.run]
+branch = true
+source = ["core", "ingestion", "signals", "reasoning", "risk", "execution", "portfolio"]
+
+[tool.coverage.report]
+exclude_lines = [
+    "pragma: no cover",
+    "if TYPE_CHECKING:",
+]
