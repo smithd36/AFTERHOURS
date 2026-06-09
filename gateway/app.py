@@ -36,6 +36,8 @@ from core.logging import configure_logging
 from ingestion.alerts import PriceAlertGenerator
 from ingestion.kraken import KrakenFeed
 from ingestion.news import NewsFeed
+from reasoning.llm import create_provider
+from reasoning.thesis import ThesisGenerator, ThesisInvalidator
 
 from .broadcaster import Broadcaster
 from .settings import GatewaySettings
@@ -65,6 +67,13 @@ async def default_lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
     alert_generator = PriceAlertGenerator(bus)
     await alert_generator.start()
 
+    provider = create_provider()
+    thesis_generator = ThesisGenerator(bus, provider)
+    await thesis_generator.start()
+
+    thesis_invalidator = ThesisInvalidator(bus)
+    await thesis_invalidator.start()
+
     feed = KrakenFeed(bus)
     feed_task = asyncio.create_task(feed.run(), name="kraken_feed")
 
@@ -88,6 +97,8 @@ async def default_lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
         except asyncio.CancelledError:
             pass
 
+    await thesis_invalidator.stop()
+    await thesis_generator.stop()
     await alert_generator.stop()
     await broadcaster.stop()
     await bus.close()

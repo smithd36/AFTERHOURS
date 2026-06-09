@@ -1,9 +1,11 @@
 import { cn } from "@/lib/utils";
 import { MarketWatch } from "@/components/panels/MarketWatch";
 import { SignalFeed } from "@/components/panels/SignalFeed";
+import { ThesisFeed } from "@/components/panels/ThesisFeed";
 import { useEventStream } from "@/hooks/useEventStream";
 import { useMarketTicks } from "@/hooks/useMarketTicks";
 import { useSignals } from "@/hooks/useSignals";
+import { useTheses } from "@/hooks/useTheses";
 import type { EventEnvelope } from "@/types/core";
 
 function ConnectionPip({ connected }: { connected: boolean }) {
@@ -25,10 +27,12 @@ function ConnectionPip({ connected }: { connected: boolean }) {
 export default function App() {
   const { ticks, handleEnvelope: handleTick } = useMarketTicks();
   const { signals, handleEnvelope: handleSignal } = useSignals();
+  const { theses, handleEnvelope: handleThesis } = useTheses();
 
   const handleEnvelope = (envelope: EventEnvelope) => {
     handleTick(envelope);
     handleSignal(envelope);
+    handleThesis(envelope);
   };
 
   const { connected } = useEventStream(handleEnvelope);
@@ -46,6 +50,7 @@ export default function App() {
         <div className="mx-auto grid max-w-5xl grid-cols-1 gap-3 lg:grid-cols-2">
           <MarketWatch ticks={ticks} />
           <SignalFeed signals={signals} />
+          <ThesisFeed theses={theses} />
         </div>
       </main>
     </div>

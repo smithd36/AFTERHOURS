@@ -27,6 +27,10 @@ dependencies = [
     # --- exchange connectivity ---
     "ccxt>=4.4",                  # normalises 100+ venues; Coinbase + Kraken adapters
 
+    # --- LLM providers ---
+    "anthropic>=0.40",            # Anthropic Claude (production default)
+    "openai>=1.54",               # OpenAI + Ollama-compatible local models
+
     # --- observability ---
     "structlog>=24.4",            # structured JSON logging
 
@@ -49,8 +53,8 @@ dev = [
 packages = [
     "core",
     "ingestion",
-    "signals",
     "reasoning",
+    "signals",
     "risk",
     "execution",
     "portfolio",
@@ -84,7 +88,7 @@ strict = true
 plugins = ["pydantic.mypy"]
 
 [[tool.mypy.overrides]]
-module = ["ccxt.*", "websockets.*", "feedparser.*"]
+module = ["ccxt.*", "websockets.*", "feedparser.*", "anthropic.*", "openai.*"]
 ignore_missing_imports = true
 
 # ---------------------------------------------------------------------------

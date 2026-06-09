@@ -38,6 +38,35 @@ Market data feeds and signal generators. Feeds run as long-lived async tasks; si
 | `ingestion/news/normalizer.py` | RSS entry → `EventEnvelope(SIGNAL_CREATED)` with keyword-based instrument extraction |
 | `ingestion/news/settings.py` | `NEWS_FEED_URLS`, `NEWS_POLL_INTERVAL_SECONDS` env config |
 
+### `reasoning/`
+
+LLM thesis layer. Converts accumulated signals into structured trade theses via an LLM call, then tracks their validity over time.
+
+| Module | Responsibility |
+|---|---|
+| `reasoning/llm/base.py` | `LLMProvider` ABC — `async complete(messages) -> str` |
+| `reasoning/llm/settings.py` | `LLMSettings` — provider, model, API keys, per-provider defaults |
+| `reasoning/llm/__init__.py` | `create_provider()` factory — validates key presence, selects implementation |
+| `reasoning/llm/providers/anthropic.py` | Anthropic Claude via `anthropic` SDK |
+| `reasoning/llm/providers/openai.py` | OpenAI via `openai` SDK |
+| `reasoning/llm/providers/ollama.py` | Local Ollama via `httpx` (no extra dep) |
+| `reasoning/llm/providers/openai_compatible.py` | Generic OpenAI-compatible: Groq, Mistral, OpenRouter |
+| `reasoning/thesis/generator.py` | Subscribes to `signal.created`; buffers per-instrument; calls LLM; emits `thesis.created` |
+| `reasoning/thesis/invalidator.py` | Subscribes to `thesis.created`; emits `thesis.invalidated` when time horizon elapses |
+| `reasoning/thesis/prompt.py` | Prompt templates — system message + JSON schema instruction |
+| `reasoning/thesis/settings.py` | `ThesisSettings` — trigger threshold, window, cooldown, expiry, max tokens |
+
+**Supported providers:**
+
+| `LLM_PROVIDER` | Cost | Default model |
+|---|---|---|
+| `ollama` | Free (local) | `llama3.2` |
+| `groq` | Free 14k req/day | `llama-3.3-70b-versatile` |
+| `mistral` | Free 1B tok/month | `mistral-small-latest` |
+| `openrouter` | Free 50 req/day | `llama-3.3-70b-instruct:free` |
+| `anthropic` | Paid | `claude-haiku-4-5-20251001` |
+| `openai` | Paid | `gpt-4o-mini` |
+
 ### `gateway/`
 
 The FastAPI application. Exposes HTTP endpoints and the WebSocket feed. Manages the application lifespan.
@@ -57,8 +86,10 @@ React terminal UI built with Vite, TypeScript, Tailwind CSS v4, and shadcn/ui (n
 | `hooks/useEventStream.ts` | WS connection to `/ws`, exponential backoff reconnect |
 | `hooks/useMarketTicks.ts` | `useReducer`-backed tick map; dispatches on `market.tick` |
 | `hooks/useSignals.ts` | Accumulates last 50 `signal.created` events; deduplicates by id |
+| `hooks/useTheses.ts` | Accumulates last 20 `thesis.created`; updates status on `thesis.invalidated` |
 | `components/panels/MarketWatch.tsx` | Live tick table with bullish/bearish price colouring |
 | `components/panels/SignalFeed.tsx` | Scrollable signal list; PRICE/NEWS badges; relative-age labels |
+| `components/panels/ThesisFeed.tsx` | Thesis cards; LONG/SHORT/NEUTRAL + ACTIVE/EXPIRED/INVALIDATED badges; invalidation conditions |
 | `components/layout/PanelShell.tsx` | Reusable terminal panel (header bar + content slot) |
 | `types/core.ts` | TypeScript mirror of `core/schemas/*.py` |
 

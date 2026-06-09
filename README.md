@@ -8,14 +8,18 @@ A modular monolith that connects live market data, LLM-generated trade theses, a
 
 ## Status
 
-**Phase 1 complete.** Live market data and signals flow end-to-end:
+**Phase 2 complete.** LLM thesis layer live end-to-end:
 
 ```
 Kraken WebSocket → InProcessBus → SQLiteEventStore → FastAPI /ws → React terminal
                                         ↑
               PriceAlertGenerator (ticks → signal.created)
               RSSNewsFeed         (CoinDesk / CoinTelegraph → signal.created)
+              ThesisGenerator     (signals → LLM → thesis.created)
+              ThesisInvalidator   (time horizon elapsed → thesis.invalidated)
 ```
+
+LLM provider is pluggable: Groq · Mistral · OpenRouter (free) or Anthropic · OpenAI · Ollama.
 
 ---
 
@@ -174,7 +178,7 @@ See [`PLANNING.md`](PLANNING.md) for the full non-negotiables list.
 |---|---|---|
 | **0** ✅ | Infrastructure | Live ticks end-to-end: exchange → bus → DB → screen |
 | **1** ✅ | Signals | Price alerts + RSS news ingestion, SignalFeed panel |
-| **2** | Thesis | LLM thesis generation, invalidation conditions |
+| **2** ✅ | Thesis | Pluggable LLM thesis generation, time-based invalidation, ThesisFeed panel |
 | **3** | Risk engine | Deterministic sizing, stop-loss gating, kill switch |
 | **4** | Execution | Paper trading, order lifecycle, fill reconciliation |
 | **5** | Autonomy | Semi-auto mode, ECE measurement, demotion triggers |
