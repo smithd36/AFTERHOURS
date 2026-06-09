@@ -187,4 +187,4 @@ See [`docs/adr/003-api-key-security.md`](docs/adr/003-api-key-security.md).
 
 ## License
 
-Private — not for distribution.
+[Elastic License 2.0](LICENSE) — free to use and contribute; you may not redistribute or offer it as a product or service.
