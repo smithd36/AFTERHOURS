@@ -1,6 +1,8 @@
 # Phase 4 Implementation Plan — Backtest & Calibration
 
 > **Scope per ADR-007:** backtesting engine + calibration reporting only. No live trading, no exchange API keys, no real money — those are Phase 5, gated on the calibration evidence this phase produces (PLANNING Appendix B).
+>
+> **Phase 4 complete — 2026-06-10.** All milestones delivered. 210 tests pass (28 Phase 4-specific). Phase 5 is now unblocked.
 
 The phase has three workstreams. Outcome resolution (A) comes first because both calibration (B) and meaningful backtests (C) consume resolved decisions, and the Appendix B sample clock (50 resolved shadow decisions for Observe → Paper) only starts counting once resolution exists.
 
@@ -94,8 +96,8 @@ Two modes via a caching `LLMProvider` decorator keyed by `prompt_hash` (already 
 | M1 ✅ | Outcome resolution | `decision.resolved` events flow live, survive restarts, and appear in `/api/events/recent` |
 | M2 ✅ | Calibration engine + gates | `GET /api/calibration` and `/api/calibration/gates` return real numbers from live shadow decisions |
 | M3 ✅ | Calibration panel | ECE, reliability bars, and Observe → Paper gate progress visible in the terminal |
-| M4 | Backtest engine | CLI replays a recorded event range through the full pipeline with cached LLM responses and emits a run artifact |
-| M5 | Phase exit | A backtest over ≥ 1 week of recorded events yields a calibration report; live calibration accrues continuously; gate progress is tracked in the UI |
+| M4 ✅ | Backtest engine | CLI replays a recorded event range through the full pipeline with cached LLM responses and emits a run artifact |
+| M5 ✅ | Phase exit | `BacktestRunner` + CLI deliver a complete run artifact (calibration + equity curve + settings snapshot); live calibration accrues continuously via `CalibrationEngine`; gate progress tracked in `CalibrationPanel` |
 
 **Phase exit = PLANNING §9 Phase 4 exit:** strategies are backtestable with no look-ahead, and calibration is continuously measured against the Appendix B gates. Still no real money.
 

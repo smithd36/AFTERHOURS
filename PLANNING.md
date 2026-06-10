@@ -1,6 +1,6 @@
 # AFTERHOURS — Architecture & Product Planning Document
 
-> **Status:** v0.2 — Phases 0–3 implemented (see README for current state); Phases 4+ pending. Roadmap re-scoped 2026-06-09 (ADR-007): Phase 4 is now backtest + calibration only; live trading is a new Phase 5; former Phases 5/6 are now 6/7.
+> **Status:** v0.3 — Phases 0–4 implemented (see README for current state); Phase 5+ pending. Roadmap re-scoped 2026-06-09 (ADR-007): Phase 4 is backtest + calibration (complete 2026-06-10); live trading is Phase 5; former Phases 5/6 are now 6/7.
 > **Author:** Lead Architect
 > **Date:** 2026-06-09
 > **Audience:** Founder, engineering, future contributors
@@ -322,8 +322,8 @@ Each phase ends in something usable and de-risks the next. **No real money until
 - Deterministic **risk engine** (sizing, position limits, per-trade max loss, stop price, kill switch). **Decision Generator** (LLM → full `Decision` object with `prompt_hash`, evidence, confidence). **Paper execution adapter** (simulated fills + realistic slippage). **Portfolio/Ledger** (paper positions, cash, unrealized P&L). **Decision Queue UI panel** (Approve/Reject in Assisted mode). Autonomy modes: Observe + Paper + Assisted.
 - *Exit:* the full Observe → Paper → Assisted pipeline runs end-to-end on paper. The risk engine is the authoritative gatekeeper and the kill switch is always reachable. **No real money yet.**
 
-### Phase 4 — Backtest & Calibration
-- **Outcome resolution**: score every shadow/paper decision against subsequent price action at its time horizon (`event_time` only) so confidence can be compared with realized outcomes. **Backtesting engine** with point-in-time correctness (replay the event stream through the same reasoning/risk/execution path with mock adapters, no look-ahead). **Calibration reporting** (ECE measurement, confidence vs realized outcomes, autonomy gate tracking per Appendix B) — the north-star metric of the project. Implementation plan: `docs/phase4-plan.md`.
+### Phase 4 — Backtest & Calibration ✅ (complete 2026-06-10)
+- **Outcome resolution**: `OutcomeResolver` scores every shadow/paper decision against subsequent price action at its time horizon (`event_time` only) — emits `decision.resolved` with entry/resolution prices, side-adjusted return, and hit/miss. Rehydrates on restart; driven by tick `event_time`, not wall clock. **Backtesting engine**: `BacktestRunner` replays recorded source events (`market.tick`, `signal.created`) through the full pipeline on an isolated in-memory bus; point-in-time correct, no look-ahead; LLM calls served from a JSON cache (record first run with `--llm live`, replay free). CLI: `python -m backtest [--from DATE] [--to DATE] [--llm replay|live]` produces a JSON run artifact. **Calibration reporting**: `CalibrationEngine` maintains reliability buckets and ECE (overall + per-mode); `GateTracker` evaluates Appendix B criteria; both exposed via `GET /api/calibration` and `/api/calibration/gates`; `CalibrationPanel` shows headline ECE, reliability bars, and gate progress in the terminal. Implementation details: `docs/phase4-plan.md`.
 - *Exit:* strategies are backtestable with no look-ahead, and calibration is continuously measured and reported against the Appendix B gates. **Still no real money.**
 
 ### Phase 5 — Live Trading (Assisted)
@@ -442,4 +442,4 @@ Keeping the safety rails full-strength is what makes the faster Balanced ramp ac
 
 ---
 
-*End of v0.2. All six §12 decisions are LOCKED. Revise as Phase exits reveal new constraints (and re-confirm the live execution venue before Phase 5 — market-data sourcing is settled: Kraken primary, Coinbase secondary).*
+*End of v0.3. All six §12 decisions are LOCKED. Phase 4 complete 2026-06-10. Revise as Phase exits reveal new constraints (and re-confirm the live execution venue before Phase 5 — market-data sourcing is settled: Kraken primary, Coinbase secondary).*

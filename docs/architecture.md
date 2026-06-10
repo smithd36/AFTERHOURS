@@ -244,7 +244,32 @@ Stop-loss: the risk engine watches every tick against open positions' stop price
       GateTracker → Appendix B readiness → GET /api/calibration/gates
 ```
 
-Shadow decisions (OBSERVE-mode rejections) are resolved like any other — they are the Observe → Paper gate sample. Resolution is driven entirely by tick `event_time`, so restarts catch up by replaying stored history, and the future backtest engine reuses the resolver unchanged.
+Shadow decisions (OBSERVE-mode rejections) are resolved like any other — they are the Observe → Paper gate sample. Resolution is driven entirely by tick `event_time`, so restarts catch up by replaying stored history, and the backtest engine reuses the resolver unchanged.
+
+### Backtest replay (Phase 4)
+
+```
+python -m backtest --from 2026-06-01 --to 2026-06-08 [--llm replay|live]
+
+1. SqliteEventStore.range(["market.tick","signal.created"], start, end)
+   └─ chronological source events from afterhours.db
+
+2. BacktestRunner.run()
+   └─ isolated InMemoryEventStore + InProcessBus
+   └─ same pipeline as live: ThesisGenerator → DecisionGenerator →
+      RiskEngine → PaperExecutor → Portfolio → OutcomeResolver → CalibrationEngine
+   └─ each source event published in order; derived events regenerate naturally
+
+3. LLM calls → CachingProvider
+   ├─ replay mode (default): serve recorded responses keyed by prompt_hash; miss → skip
+   └─ live mode: call provider, record response for future replays
+
+4. write_artifact(report, "backtest_runs/")
+   └─ JSON: run_id, window, replayed counts, generated counts,
+      calibration report, equity curve, portfolio snapshot, settings
+```
+
+Point-in-time correctness: every financial decision uses the triggering event's `event_time`; no component calls `datetime.now()` in a financial path during replay.
 
 ### Event persistence
 
@@ -353,13 +378,24 @@ Font stack: Geist Mono → JetBrains Mono → Fira Code → ui-monospace. The te
 
 ---
 
+### `backtest/`
+
+Event-time replay engine. Loads recorded source events from `SqliteEventStore.range()`, wires the full pipeline onto an isolated in-memory bus, and runs it to completion. LLM calls are served from a JSON file cache — deterministic and free on replay runs, recorded on the first live pass.
+
+| Module | Responsibility |
+|---|---|
+| `backtest/runner.py` | `BacktestRunner` — assembles all pipeline components on a fresh in-memory bus, replays source events, collects generated-event counts, equity curve, calibration report, and portfolio snapshot into a `dict` run artifact |
+| `backtest/__main__.py` | CLI entry point (`python -m backtest`): loads events from `afterhours.db`, builds a `CachingProvider`, runs the runner, writes a JSON artifact to `backtest_runs/`, prints a summary |
+| `backtest/__init__.py` | Re-exports `BacktestRunner`, `write_artifact` |
+
+Only **source topics** are replayed (`market.tick`, `signal.created`). Derived events (theses, decisions, fills, resolutions) regenerate through the live pipeline — replaying them would double-count. The thesis invalidator is excluded from replay (wall-clock paced); decisions still resolve via their time horizon, so calibration is unaffected. Point-in-time correctness is guaranteed because every pipeline component uses the triggering envelope's `event_time` as its financial clock.
+
+---
+
 ## Planned Subsystems (not yet built)
 
 | Subsystem | Phase | Notes |
 |---|---|---|
-| Backtest harness | 4 | Point-in-time correct event replay with mock adapters (outcome resolution, calibration engine, and the terminal panel are built — see `calibration/`) |
 | Live exchange adapter | 5 | Assisted mode only, micro sizes; execution venue re-confirmed at phase start (ADR-007) |
 | Scale & autonomy | 6 | Equities, semi-auto mode, correlation risk, Strategy Lab |
 | Harden & extend | 7 | Performance, service extraction, advanced observability, disaster recovery |
-
-Phase 4 implementation plan: [`docs/phase4-plan.md`](phase4-plan.md).

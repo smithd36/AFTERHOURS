@@ -206,14 +206,46 @@ npm run lint       # eslint
 
 ---
 
+## Running a Backtest
+
+The backtest CLI replays a recorded event range through the full pipeline and writes a JSON run artifact:
+
+```bash
+# Replay all recorded history (LLM responses served from cache — free)
+python -m backtest
+
+# Replay a specific window
+python -m backtest --from 2026-06-01 --to 2026-06-08
+
+# Record fresh LLM responses (requires LLM_PROVIDER configured)
+python -m backtest --llm live
+
+# Shadow-decision-only mode
+python -m backtest --mode observe
+
+# Custom database and output directory
+python -m backtest --db path/to/afterhours.db --out my_runs/
+```
+
+Run artifacts are written to `backtest_runs/` as `run_<timestamp>_<id_prefix>.json`. Each artifact contains the run window, event counts (replayed + generated), calibration report (ECE + reliability buckets), equity curve, portfolio snapshot, and the full settings snapshot used.
+
+**Note:** the database must contain recorded `market.tick` and `signal.created` events for the requested window. Run the backend live for a while before backtesting. Deleting `afterhours.db` discards backtest source data.
+
+---
+
 ## Project Structure (Python packages)
 
 ```
 afterhours/
 ├── core/           # pip-installable as "afterhours-core"
 ├── ingestion/      # depends on core
-├── gateway/        # depends on core, ingestion
+├── reasoning/      # depends on core
+├── risk/           # depends on core
+├── portfolio/      # depends on core
+├── calibration/    # depends on core
+├── backtest/       # depends on calibration, portfolio, reasoning, risk
+├── gateway/        # depends on all of the above
 └── tests/          # tests for all packages
 ```
 
-The packages share a single `pyproject.toml` and are installed together as an editable install (`pip install -e .`). Import paths are `from core.schemas import EventEnvelope`, `from ingestion.coinbase import CoinbaseFeed`, etc.
+The packages share a single `pyproject.toml` and are installed together as an editable install (`pip install -e .`). Import paths are `from core.schemas import EventEnvelope`, `from backtest import BacktestRunner`, etc.
