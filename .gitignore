@@ -129,5 +129,12 @@ ehthumbs.db
 # Claude Code local config (project-level settings are tracked;
 # session-local overrides are not)
 # ---------------------------------------------------------------------------
+.claude/
 .claude/settings.local.json
 CLAUDE.md
+# TypeScript incremental build state (tsc -b)
+*.tsbuildinfo
+
+# Backtest artifacts and the LLM record/replay cache
+backtest_runs/
+llm_cache.json

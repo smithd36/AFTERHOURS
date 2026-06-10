@@ -85,6 +85,10 @@ class EventType(str, Enum):
     DECISION_EXECUTING = "decision.executing"  # payload: {decision_id}
     DECISION_EXECUTED = "decision.executed"  # payload: {decision_id, outcome}
     DECISION_FAILED = "decision.failed"  # payload: {decision_id, error}
+    DECISION_RESOLVED = "decision.resolved"  # payload: {decision_id, predicted_side, confidence,
+    #   mode_at_proposal, entry_price, resolution_price, realized_return_pct (side-adjusted),
+    #   hit, resolution_reason, proposed_at, resolved_at} — emitted by the outcome resolver
+    #   when a decision's prediction is scored against realized price action (calibration input)
 
     # --- Orders ---
     ORDER_SUBMITTED = "order.submitted"  # payload: {order_id, decision_id, ...}

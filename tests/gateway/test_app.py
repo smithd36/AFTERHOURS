@@ -15,6 +15,7 @@ import pytest
 from fastapi import FastAPI
 from fastapi.testclient import TestClient
 
+from calibration import CalibrationEngine, GateTracker
 from core.bus import InMemoryEventStore, InProcessBus
 from gateway.app import create_app
 from gateway.broadcaster import Broadcaster
@@ -32,12 +33,21 @@ async def _lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
     broadcaster = Broadcaster(bus)
     await broadcaster.start()
 
+    calibration_engine = CalibrationEngine(bus)
+    await calibration_engine.start()
+    gate_tracker = GateTracker(bus, calibration_engine)
+    await gate_tracker.start()
+
     app.state.bus = bus
     app.state.broadcaster = broadcaster
     app.state.event_store = store
+    app.state.calibration_engine = calibration_engine
+    app.state.gate_tracker = gate_tracker
 
     yield
 
+    await gate_tracker.stop()
+    await calibration_engine.stop()
     await broadcaster.stop()
     await bus.close()
 
@@ -180,3 +190,54 @@ class TestWebSocketEndpoint:
             data = json.loads(ws.receive_text())
             assert data["event_type"] == EventType.MARKET_TICK
             assert data["payload"]["instrument"] == "BTC-USD"
+
+
+# ---------------------------------------------------------------------------
+# Calibration endpoints
+# ---------------------------------------------------------------------------
+
+
+class TestCalibrationEndpoints:
+    @staticmethod
+    def _publish_resolved(client: TestClient, confidence: float, hit: bool) -> None:
+        from datetime import UTC, datetime
+        from typing import cast
+
+        from core.schemas import EventEnvelope
+
+        env = EventEnvelope(
+            event_type="decision.resolved",
+            source="test",
+            event_time=datetime.now(UTC),
+            ingest_time=datetime.now(UTC),
+            payload={
+                "decision_id": "d1",
+                "confidence": confidence,
+                "hit": hit,
+                "mode_at_proposal": "observe",
+            },
+        )
+        portal = client.portal
+        assert portal is not None
+        portal.call(cast(FastAPI, client.app).state.bus.publish, env)
+
+    def test_empty_report(self, client: TestClient) -> None:
+        data = client.get("/api/calibration").json()
+        assert data["overall"]["n"] == 0
+        assert data["overall"]["ece"] is None
+
+    def test_report_reflects_resolved_decisions(self, client: TestClient) -> None:
+        self._publish_resolved(client, 0.8, True)
+        self._publish_resolved(client, 0.8, False)
+
+        data = client.get("/api/calibration").json()
+        assert data["overall"]["n"] == 2
+        assert data["overall"]["ece"] == pytest.approx(0.3)
+        assert data["by_mode"]["observe"]["n"] == 2
+
+    def test_gates_report_shape(self, client: TestClient) -> None:
+        data = client.get("/api/calibration/gates").json()
+        for gate in ("observe_to_paper", "paper_to_assisted"):
+            assert data[gate]["ready"] is False  # empty sample
+            assert data[gate]["criteria"]
+            assert data[gate]["deferred"]

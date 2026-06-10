@@ -16,6 +16,7 @@ psycopg3 AsyncConnectionPool. The Bus and all callers are unchanged.
 from __future__ import annotations
 
 import json
+from datetime import UTC, datetime
 from typing import TYPE_CHECKING, Protocol, runtime_checkable
 
 import structlog
@@ -61,6 +62,21 @@ class InMemoryEventStore:
     ) -> list[EventEnvelope]:
         matching = [e for e in self.events if e.event_type in event_types]
         return matching[-limit:]
+
+    async def range(
+        self,
+        event_types: list[str],
+        start: datetime | None = None,
+        end: datetime | None = None,
+    ) -> list[EventEnvelope]:
+        matching = [
+            e
+            for e in self.events
+            if e.event_type in event_types
+            and (start is None or e.event_time >= start)
+            and (end is None or e.event_time <= end)
+        ]
+        return sorted(matching, key=lambda e: e.event_time)
 
     async def close(self) -> None:
         pass
@@ -158,6 +174,63 @@ class SqliteEventStore:
         ]
         envelopes.reverse()  # DESC query → chronological for replay
         return envelopes
+
+    async def range(
+        self,
+        event_types: list[str],
+        start: datetime | None = None,
+        end: datetime | None = None,
+    ) -> list[EventEnvelope]:
+        """
+        All events of the given types within [start, end], in chronological
+        order. Used by the backtest engine to load source events for replay.
+        Bounds compare against `event_time` (the financial clock).
+        """
+        if not event_types:
+            return []
+
+        # Stored event_time strings come from pydantic's JSON serializer,
+        # which renders UTC as "…Z"; bounds must use the same form for the
+        # lexicographic comparison (and index) to be correct.
+        def _ts(ts: datetime) -> str:
+            return ts.astimezone(UTC).isoformat().replace("+00:00", "Z")
+
+        placeholders = ", ".join("?" * len(event_types))
+        clauses = [f"event_type IN ({placeholders})"]
+        params: list[str] = list(event_types)
+        if start is not None:
+            clauses.append("event_time >= ?")
+            params.append(_ts(start))
+        if end is not None:
+            clauses.append("event_time <= ?")
+            params.append(_ts(end))
+
+        cursor = await self._conn.execute(
+            f"""
+            SELECT id, event_type, source, schema_version,
+                   event_time, ingest_time, correlation_id, payload
+            FROM events
+            WHERE {" AND ".join(clauses)}
+            ORDER BY event_time ASC
+            """,
+            params,
+        )
+        rows = await cursor.fetchall()
+        await cursor.close()
+
+        return [
+            EventEnvelope(
+                id=row[0],
+                event_type=row[1],
+                source=row[2],
+                schema_version=row[3],
+                event_time=row[4],
+                ingest_time=row[5],
+                correlation_id=row[6],
+                payload=json.loads(row[7]),
+            )
+            for row in rows
+        ]
 
     async def close(self) -> None:
         await self._conn.close()

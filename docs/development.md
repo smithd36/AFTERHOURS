@@ -84,6 +84,8 @@ Open `http://localhost:5173`.
 | `GET /api/portfolio` | Paper portfolio snapshot — cash, positions, P&L |
 | `POST /api/portfolio/positions/{instrument}/close` | Close an open paper position |
 | `POST /api/halt` | Kill switch — emits `risk.halt`, forces OBSERVE mode |
+| `GET /api/calibration` | ECE + reliability buckets, overall and per autonomy mode |
+| `GET /api/calibration/gates` | Appendix B graduation-gate readiness (criteria + deferred list) |
 
 ---
 
@@ -164,6 +166,12 @@ rm afterhours.db afterhours.db-wal afterhours.db-shm 2>/dev/null; true
 | `NEWS_POLL_INTERVAL_SECONDS` | `300` | RSS poll interval |
 | `ALERT_PRICE_MOVE_PCT_THRESHOLD` | `0.5` | % move that fires a `pct_move` price alert |
 | `ALERT_PRICE_MOVE_WINDOW_MINUTES` | `15` | Rolling window for the % move calculation |
+| `CALIBRATION_HORIZON_SCALP_MINUTES` | `30` | When a `scalp` decision's prediction is scored |
+| `CALIBRATION_HORIZON_INTRADAY_HOURS` | `4` | When an `intraday` decision is scored |
+| `CALIBRATION_HORIZON_SWING_DAYS` | `3` | When a `swing` decision is scored |
+| `CALIBRATION_HORIZON_POSITION_DAYS` | `21` | When a `position` decision is scored |
+| `CALIBRATION_ECE_BUCKETS` | `10` | Confidence buckets for the ECE / reliability table |
+| `CALIBRATION_GATE_*` | Appendix B | Graduation-gate thresholds (see `.env.example`) |
 | `ALERT_COOLDOWN_MINUTES` | `10` | Min gap between repeat alerts of the same type |
 | `LLM_PROVIDER` | `ollama` | `ollama` \| `groq` \| `mistral` \| `openrouter` \| `anthropic` \| `openai` |
 | `THESIS_MIN_SIGNALS_TO_TRIGGER` | `3` | Signals per instrument needed to trigger a thesis |

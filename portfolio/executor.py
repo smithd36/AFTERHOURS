@@ -75,11 +75,15 @@ class PaperExecutor:
         payload = self._pending.pop(decision_id, None)
         if payload is None:
             return False
-        await self._fill(payload)
+        await self._fill(payload, datetime.now(UTC))
         return True
 
-    async def close_position(self, instrument: str) -> bool:
-        """Manually close an open position (operator action or stop-loss)."""
+    async def close_position(self, instrument: str, now: datetime | None = None) -> bool:
+        """
+        Manually close an open position (operator action or stop-loss).
+        `now` is the financial clock of the triggering event; operator calls
+        (no triggering envelope) default to the wall clock.
+        """
         position = self._portfolio.positions.get(instrument)
         if not position:
             return False
@@ -95,12 +99,12 @@ class PaperExecutor:
         )
         fee = fill_price * position.quantity * Decimal(str(self._settings.fee_pct))
 
-        now = datetime.now(UTC)
+        now = now or datetime.now(UTC)
         await self._bus.publish(EventEnvelope(
             event_type=EventType.ORDER_FILLED,
             source="paper_executor",
             event_time=now,
-            ingest_time=now,
+            ingest_time=datetime.now(UTC),
             payload={
                 "instrument": instrument,
                 "action": "close",
@@ -132,7 +136,7 @@ class PaperExecutor:
         if self._mode == AutonomyMode.OBSERVE:
             return
         if self._mode == AutonomyMode.PAPER:
-            await self._fill(envelope.payload)
+            await self._fill(envelope.payload, envelope.event_time)
         elif self._mode == AutonomyMode.ASSISTED:
             decision_id = str(envelope.payload.get("id", ""))
             if decision_id:
@@ -142,11 +146,11 @@ class PaperExecutor:
     async def _handle_stop(self, envelope: EventEnvelope) -> None:
         instrument: str = envelope.payload.get("instrument", "")
         if instrument:
-            await self.close_position(instrument)
+            await self.close_position(instrument, now=envelope.event_time)
 
     # ------------------------------------------------------------------
 
-    async def _fill(self, decision_payload: dict) -> None:
+    async def _fill(self, decision_payload: dict, now: datetime) -> None:
         instrument: str = decision_payload.get("proposal", {}).get("instrument", "")
         side_str: str = decision_payload.get("proposal", {}).get("side", "long")
         size_usd = Decimal(str(decision_payload.get("proposal", {}).get("size_usd", "0")))
@@ -176,7 +180,6 @@ class PaperExecutor:
         if risk and risk.get("stop_price"):
             stop_price_str = str(risk["stop_price"])
 
-        now = datetime.now(UTC)
         fill = Fill(
             fill_id=str(uuid4()),
             order_id=str(uuid4()),
@@ -191,7 +194,7 @@ class PaperExecutor:
             event_type=EventType.ORDER_FILLED,
             source="paper_executor",
             event_time=now,
-            ingest_time=now,
+            ingest_time=datetime.now(UTC),
             correlation_id=UUID(decision_id) if decision_id else None,
             payload={
                 "instrument": instrument,

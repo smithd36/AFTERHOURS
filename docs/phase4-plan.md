@@ -91,9 +91,9 @@ Two modes via a caching `LLMProvider` decorator keyed by `prompt_hash` (already 
 
 | # | Deliverable | Done when |
 |---|---|---|
-| M1 | Outcome resolution | `decision.resolved` events flow live, survive restarts, and appear in `/api/events/recent` |
-| M2 | Calibration engine + gates | `GET /api/calibration` and `/api/calibration/gates` return real numbers from live shadow decisions |
-| M3 | Calibration panel | ECE, reliability bars, and Observe → Paper gate progress visible in the terminal |
+| M1 ✅ | Outcome resolution | `decision.resolved` events flow live, survive restarts, and appear in `/api/events/recent` |
+| M2 ✅ | Calibration engine + gates | `GET /api/calibration` and `/api/calibration/gates` return real numbers from live shadow decisions |
+| M3 ✅ | Calibration panel | ECE, reliability bars, and Observe → Paper gate progress visible in the terminal |
 | M4 | Backtest engine | CLI replays a recorded event range through the full pipeline with cached LLM responses and emits a run artifact |
 | M5 | Phase exit | A backtest over ≥ 1 week of recorded events yields a calibration report; live calibration accrues continuously; gate progress is tracked in the UI |
 

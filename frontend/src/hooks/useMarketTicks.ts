@@ -49,7 +49,7 @@ export function useMarketTicks(): {
 
   const handleEnvelope = useCallback((envelope: EventEnvelope) => {
     if (envelope.event_type === "market.tick") {
-      dispatch(envelope.payload as MarketTickPayload);
+      dispatch(envelope.payload as unknown as MarketTickPayload);
     }
   }, []);
 

@@ -39,6 +39,9 @@ class LLMSettings(BaseSettings):
     ollama_base_url: str = "http://localhost:11434"
     max_tokens: int = 1024
     temperature: float = 0.3
+    # Record/replay cache — kept outside the (disposable) event DB so recorded
+    # responses survive DB resets and power deterministic backtests.
+    cache_path: str = "llm_cache.json"
 
     # Standard env var names — validation_alias bypasses the LLM_ prefix
     anthropic_api_key: str = Field(default="", validation_alias="ANTHROPIC_API_KEY")

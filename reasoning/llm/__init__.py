@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from .base import LLMProvider, Message
+from .cache import CachingProvider, JsonFileLLMCache, LLMCacheMiss
 from .settings import LLMSettings, PROVIDER_BASE_URLS, PROVIDER_DEFAULT_MODELS
 
 _REQUIRED_KEYS: dict[str, str] = {
@@ -60,4 +61,12 @@ def create_provider(settings: LLMSettings | None = None) -> LLMProvider:
             raise ValueError(f"Unknown LLM provider: {s.provider!r}")
 
 
-__all__ = ["LLMProvider", "Message", "LLMSettings", "create_provider"]
+__all__ = [
+    "CachingProvider",
+    "JsonFileLLMCache",
+    "LLMCacheMiss",
+    "LLMProvider",
+    "LLMSettings",
+    "Message",
+    "create_provider",
+]

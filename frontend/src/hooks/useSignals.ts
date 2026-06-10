@@ -26,7 +26,7 @@ interface SignalPayload {
 }
 
 function toRow(envelope: EventEnvelope, receivedAt: number): SignalRow | null {
-  const sp = envelope.payload as SignalPayload;
+  const sp = envelope.payload as unknown as SignalPayload;
   if (!sp?.id || !sp?.type) return null;
 
   const p = sp.payload ?? {};

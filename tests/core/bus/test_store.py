@@ -67,3 +67,33 @@ class TestRecent:
         assert restored.id == original.id
         assert restored.event_time == original.event_time
         assert restored.payload == original.payload
+
+
+class TestRange:
+    T0 = datetime(2026, 1, 1, 12, 0, 0, tzinfo=UTC)
+
+    async def test_window_bounds_inclusive(self, store: SqliteEventStore) -> None:
+        for i in range(5):
+            await store.append(_envelope("market.tick", i * 60, {"i": i}))
+
+        result = await store.range(
+            ["market.tick"],
+            start=self.T0 + timedelta(minutes=1),
+            end=self.T0 + timedelta(minutes=3),
+        )
+        assert [e.payload["i"] for e in result] == [1, 2, 3]
+
+    async def test_unbounded_returns_all_chronological(self, store: SqliteEventStore) -> None:
+        await store.append(_envelope("market.tick", 30, {"i": "late"}))
+        await store.append(_envelope("market.tick", 0, {"i": "early"}))
+
+        result = await store.range(["market.tick"])
+        assert [e.payload["i"] for e in result] == ["early", "late"]
+
+    async def test_filters_types(self, store: SqliteEventStore) -> None:
+        await store.append(_envelope("market.tick", 0, {"i": 0}))
+        await store.append(_envelope("signal.created", 1, {"id": "s"}))
+
+        result = await store.range(["market.tick", "signal.created"])
+        assert [e.event_type for e in result] == ["market.tick", "signal.created"]
+        assert await store.range([]) == []

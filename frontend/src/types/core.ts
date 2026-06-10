@@ -194,6 +194,7 @@ export type EventType =
   | "decision.executing"
   | "decision.executed"
   | "decision.failed"
+  | "decision.resolved"
   // orders
   | "order.submitted"
   | "order.filled"

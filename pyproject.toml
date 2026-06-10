@@ -58,6 +58,7 @@ packages = [
     "risk",
     "execution",
     "portfolio",
+    "calibration",
     "backtest",
     "gateway",
 ]
@@ -101,7 +102,7 @@ addopts = "--cov=core --cov-report=term-missing"
 
 [tool.coverage.run]
 branch = true
-source = ["core", "ingestion", "signals", "reasoning", "risk", "execution", "portfolio"]
+source = ["core", "ingestion", "signals", "reasoning", "risk", "execution", "portfolio", "calibration"]
 
 [tool.coverage.report]
 exclude_lines = [

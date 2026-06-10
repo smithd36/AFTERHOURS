@@ -93,6 +93,17 @@ Paper trading ledger and execution.
 | `portfolio/models.py` | Position and snapshot models |
 | `portfolio/settings.py` | `PORTFOLIO_INITIAL_CASH`, `PORTFOLIO_SLIPPAGE_PCT`, `PORTFOLIO_FEE_PCT` |
 
+### `calibration/`
+
+Phase 4: outcome resolution and the calibration north-star metric (PLANNING §1.5). Everything here is driven by tick `event_time`, never the wall clock, so the same components run identically live and in backtest replay.
+
+| Module | Responsibility |
+|---|---|
+| `calibration/resolver.py` | `OutcomeResolver` — tracks every `decision.proposed` (shadow decisions included) until its time horizon elapses, its stop is breached, or its thesis is invalidated; emits `decision.resolved` with entry/resolution prices, side-adjusted return, and hit/miss. Rehydrates unresolved decisions from the event store on restart and catches up against recent tick history |
+| `calibration/engine.py` | `CalibrationEngine` — reliability table (confidence buckets vs hit rate) and ECE, overall and segmented by autonomy mode at proposal time |
+| `calibration/gates.py` | `GateTracker` — evaluates the measurable Appendix B graduation criteria (sample size, ECE, span, limit breaches); unmeasurable criteria are reported as deferred, never silently passed |
+| `calibration/settings.py` | `CALIBRATION_*` — horizon durations, ECE buckets, gate thresholds |
+
 ### `gateway/`
 
 The FastAPI application. Exposes HTTP endpoints and the WebSocket feed. Manages the application lifespan.
@@ -106,6 +117,7 @@ The FastAPI application. Exposes HTTP endpoints and the WebSocket feed. Manages 
 | `gateway/routes/portfolio.py` | `GET /api/portfolio`, `POST /api/portfolio/positions/{instrument}/close` |
 | `gateway/routes/halt.py` | `POST /api/halt` — kill switch; emits `risk.halt` and forces OBSERVE |
 | `gateway/routes/events.py` | `GET /api/events/recent` — recent events from the audit log for UI panel rehydration |
+| `gateway/routes/calibration.py` | `GET /api/calibration` (ECE + reliability), `GET /api/calibration/gates` (Appendix B readiness) |
 | `gateway/settings.py` | `HOST`, `PORT`, `CORS_ORIGINS` env config |
 
 ### `frontend/`
@@ -121,11 +133,13 @@ React terminal UI built with Vite, TypeScript, Tailwind CSS v4, and shadcn/ui (n
 | `hooks/useTheses.ts` | Accumulates last 20 `thesis.created`; updates status on `thesis.invalidated` |
 | `hooks/useDecisions.ts` | Decision rows keyed by id; status updated by `decision.approved`/`decision.rejected` |
 | `hooks/usePortfolio.ts` | Portfolio snapshot from `/api/portfolio` + `portfolio.position_updated` events |
+| `hooks/useCalibration.ts` | Calibration + gate reports from `/api/calibration*`, refetched (debounced) on `decision.resolved` / `risk.limit_breached` |
 | `components/panels/MarketWatch.tsx` | Live tick table with bullish/bearish price colouring |
 | `components/panels/SignalFeed.tsx` | Scrollable signal list; PRICE/NEWS badges; relative-age labels |
 | `components/panels/ThesisFeed.tsx` | Thesis cards; LONG/SHORT/NEUTRAL + ACTIVE/EXPIRED/INVALIDATED badges; invalidation conditions |
 | `components/panels/DecisionQueue.tsx` | Decision cards with risk verdict; EXECUTE/REJECT buttons in Assisted mode |
 | `components/panels/PortfolioPanel.tsx` | Cash, positions, unrealized P&L |
+| `components/panels/CalibrationPanel.tsx` | Headline ECE, reliability bars (hit rate vs stated confidence), Appendix B gate readiness |
 | `components/layout/PanelShell.tsx` | Reusable terminal panel (header bar + content slot) |
 | `types/core.ts` | TypeScript mirror of `core/schemas/*.py` |
 
@@ -214,6 +228,24 @@ The header bar carries the OBSERVE/PAPER/ASSISTED mode switch (`/api/mode`) and 
 
 Stop-loss: the risk engine watches every tick against open positions' stop prices; a breach emits `risk.limit_breached` and the executor closes the position.
 
+### Outcome resolution (Phase 4)
+
+```
+6. OutcomeResolver (subscribes to decision.proposed, decision.approved,
+   market.tick, thesis.invalidated)
+   ├─ entry price = first tick with event_time ≥ proposal
+   ├─ tick event_time passes the horizon deadline → decision.resolved
+   │    (reason horizon_elapsed; stop breach / thesis invalidation resolve early)
+   └─ payload: predicted_side, confidence, mode_at_proposal, entry/resolution
+        prices, side-adjusted realized_return_pct, hit
+
+7. CalibrationEngine (subscribes to decision.resolved)
+   └─ reliability buckets + ECE → GET /api/calibration
+      GateTracker → Appendix B readiness → GET /api/calibration/gates
+```
+
+Shadow decisions (OBSERVE-mode rejections) are resolved like any other — they are the Observe → Paper gate sample. Resolution is driven entirely by tick `event_time`, so restarts catch up by replaying stored history, and the future backtest engine reuses the resolver unchanged.
+
 ### Event persistence
 
 Every event is appended to the `events` table **before** fan-out. The event store is the authoritative audit log. If a subscriber crashes mid-delivery, events can be replayed from the table.
@@ -253,7 +285,7 @@ Full registry in `core/schemas/events.py` (`EventType` enum) and mirrored in `fr
 | `market` | `tick`, `orderbook`, `ohlcv` |
 | `signal` | `created`, `updated` |
 | `thesis` | `created`, `updated`, `invalidated` |
-| `decision` | `proposed`, `approved`, `rejected`, `expired`, `executing`, `executed`, `failed` |
+| `decision` | `proposed`, `approved`, `rejected`, `expired`, `executing`, `executed`, `failed`, `resolved` |
 | `order` | `submitted`, `filled`, `partially_filled`, `cancelled`, `failed` |
 | `portfolio` | `position_updated`, `reconciled`, `reconciliation_failed` |
 | `risk` | `limit_approached`, `limit_breached`, `halt` |
@@ -325,9 +357,7 @@ Font stack: Geist Mono → JetBrains Mono → Fira Code → ui-monospace. The te
 
 | Subsystem | Phase | Notes |
 |---|---|---|
-| Outcome resolution | 4 | Score decisions against realized price action at their time horizon (`decision.resolved`) |
-| Backtest harness | 4 | Point-in-time correct event replay with mock adapters |
-| Calibration engine | 4 | ECE measurement, autonomy gate tracking (Appendix B) |
+| Backtest harness | 4 | Point-in-time correct event replay with mock adapters (outcome resolution, calibration engine, and the terminal panel are built — see `calibration/`) |
 | Live exchange adapter | 5 | Assisted mode only, micro sizes; execution venue re-confirmed at phase start (ADR-007) |
 | Scale & autonomy | 6 | Equities, semi-auto mode, correlation risk, Strategy Lab |
 | Harden & extend | 7 | Performance, service extraction, advanced observability, disaster recovery |

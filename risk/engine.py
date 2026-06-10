@@ -85,7 +85,9 @@ class RiskEngine:
         payload = envelope.payload
         decision_id: str = str(payload.get("id", ""))
         instrument: str = str(payload.get("proposal", {}).get("instrument", ""))
-        now = datetime.now(UTC)
+        # Verdict events inherit the proposal's event clock so the decision
+        # lifecycle stays on one timeline in live and in backtest replay.
+        now = envelope.event_time
 
         # Observe mode: shadow decision, no execution
         if self._mode == AutonomyMode.OBSERVE:
@@ -157,7 +159,7 @@ class RiskEngine:
             event_type=EventType.DECISION_APPROVED,
             source="risk_engine",
             event_time=now,
-            ingest_time=now,
+            ingest_time=datetime.now(UTC),
             correlation_id=UUID(decision_id) if decision_id else None,
             payload=approved_payload,
         ))
@@ -186,7 +188,7 @@ class RiskEngine:
             event_type=EventType.DECISION_REJECTED,
             source="risk_engine",
             event_time=now,
-            ingest_time=now,
+            ingest_time=datetime.now(UTC),
             correlation_id=UUID(decision_id) if decision_id else None,
             payload=rejected_payload,
         ))
@@ -216,7 +218,7 @@ class RiskEngine:
         if not breached:
             return
 
-        now = datetime.now(UTC)
+        now = envelope.event_time  # the breaching tick's clock — replay-safe
         logger.warning("risk_engine.stop_breached", instrument=instrument,
                        price=str(price), stop=str(position.stop_price))
 
@@ -224,7 +226,7 @@ class RiskEngine:
             event_type=EventType.RISK_LIMIT_BREACHED,
             source="risk_engine",
             event_time=now,
-            ingest_time=now,
+            ingest_time=datetime.now(UTC),
             payload={
                 "instrument": instrument,
                 "reason": "stop_loss",

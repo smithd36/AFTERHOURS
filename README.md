@@ -8,7 +8,7 @@ A modular monolith that connects live market data, LLM-generated trade theses, a
 
 ## Status
 
-**Phase 3 complete.** Full decision pipeline live end-to-end, through paper execution:
+**Phase 3 complete; Phase 4 (backtest + calibration) in progress.** Full decision pipeline live end-to-end, through paper execution and outcome scoring:
 
 ```
 Kraken WebSocket → InProcessBus → SQLiteEventStore → FastAPI /ws + /api → React terminal
@@ -21,6 +21,8 @@ Kraken WebSocket → InProcessBus → SQLiteEventStore → FastAPI /ws + /api �
               RiskEngine          (deterministic sizing/limits → decision.approved/rejected)
               PaperExecutor       (simulated fills → order.filled)
               Portfolio           (positions, cash, P&L → portfolio.position_updated)
+              OutcomeResolver     (prediction vs price at horizon → decision.resolved)
+              CalibrationEngine   (ECE + Appendix B gate tracking → /api/calibration)
 ```
 
 Autonomy modes Observe / Paper / Assisted are operational with a kill-switch HALT,
@@ -152,14 +154,15 @@ afterhours/
 │
 ├── risk/                   # Deterministic risk engine — sizing, limits, stop-loss
 ├── portfolio/              # Paper trading — ledger, PaperExecutor, fills
+├── calibration/            # Outcome resolution, ECE engine, autonomy gate tracking
 │
 ├── gateway/                # FastAPI app — HTTP + WebSocket gateway
-│   └── routes/             # /api/mode, /api/decisions, /api/portfolio, /api/halt, /api/events
+│   └── routes/             # /api/mode, /api/decisions, /api/portfolio, /api/halt, /api/events, /api/calibration
 │
 ├── frontend/               # React terminal UI
 │   └── src/
-│       ├── components/     # MarketWatch, SignalFeed, ThesisFeed, DecisionQueue, PortfolioPanel
-│       ├── hooks/          # useEventStream, useBackfill, useSignals, useTheses, useDecisions, …
+│       ├── components/     # MarketWatch, SignalFeed, ThesisFeed, DecisionQueue, PortfolioPanel, CalibrationPanel
+│       ├── hooks/          # useEventStream, useBackfill, useSignals, useTheses, useDecisions, useCalibration, …
 │       └── types/          # TypeScript mirror of core/schemas
 │
 ├── tests/                  # pytest test suite

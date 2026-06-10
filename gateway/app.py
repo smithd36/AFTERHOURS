@@ -29,6 +29,7 @@ import structlog
 from fastapi import FastAPI, WebSocket, WebSocketDisconnect
 from fastapi.middleware.cors import CORSMiddleware
 
+from calibration import CalibrationEngine, CalibrationSettings, GateTracker, OutcomeResolver
 from core.bus import InProcessBus
 from core.bus.store import SqliteEventStore
 from core.db import migrate, open_db
@@ -39,12 +40,13 @@ from ingestion.kraken import KrakenFeed
 from ingestion.news import NewsFeed
 from portfolio import PaperExecutor, Portfolio
 from reasoning.decision import DecisionGenerator
-from reasoning.llm import create_provider
+from reasoning.llm import CachingProvider, JsonFileLLMCache, LLMSettings, create_provider
 from reasoning.thesis import ThesisGenerator, ThesisInvalidator
 from risk import RiskEngine
 
 from .broadcaster import Broadcaster
 from .routes import (
+    calibration_router,
     decisions_router,
     events_router,
     halt_router,
@@ -78,7 +80,13 @@ async def default_lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
     alert_generator = PriceAlertGenerator(bus)
     await alert_generator.start()
 
-    provider = create_provider()
+    # Record every LLM response keyed by prompt hash — recorded responses
+    # power deterministic, free backtest replays (python -m backtest).
+    llm_settings = LLMSettings()
+    provider = CachingProvider(
+        JsonFileLLMCache(llm_settings.cache_path),
+        inner=create_provider(llm_settings),
+    )
     thesis_generator = ThesisGenerator(bus, provider)
     await thesis_generator.start()
 
@@ -112,6 +120,44 @@ async def default_lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
     decision_generator = DecisionGenerator(bus, provider)
     await decision_generator.start()
 
+    # Phase 4: outcome resolution + calibration.
+    # Rehydrate from the audit log before live feeds start: resolved history
+    # feeds the calibration engine; still-unresolved proposals are re-tracked
+    # and caught up against recent tick history so restarts don't orphan them.
+    calibration_settings = CalibrationSettings()
+    resolver = OutcomeResolver(bus, initial_mode=initial_mode, settings=calibration_settings)
+    calibration_engine = CalibrationEngine(bus, settings=calibration_settings)
+    gate_tracker = GateTracker(bus, calibration_engine, settings=calibration_settings)
+
+    resolved_events = await store.recent([EventType.DECISION_RESOLVED.value], limit=2000)
+    calibration_engine.seed(resolved_events)
+    resolved_ids = {str(e.payload.get("decision_id", "")) for e in resolved_events}
+    # The historical mode isn't recorded on the proposal, so derive it from the
+    # risk verdict: an observe_mode rejection marks a shadow decision; anything
+    # else was proposed under paper/assisted (both fill on the paper executor).
+    shadow_ids = {
+        str(e.payload.get("id", ""))
+        for e in await store.recent([EventType.DECISION_REJECTED.value], limit=2000)
+        if any(
+            r.startswith("observe_mode")
+            for r in (e.payload.get("risk") or {}).get("rejection_reasons", [])
+        )
+    }
+    unresolved = [
+        (e, AutonomyMode.OBSERVE if did in shadow_ids else AutonomyMode.PAPER)
+        for e in await store.recent([EventType.DECISION_PROPOSED.value], limit=2000)
+        if (did := str(e.payload.get("id", ""))) not in resolved_ids
+    ]
+    resolver.seed(unresolved)
+    await resolver.replay(
+        await store.recent(
+            [EventType.MARKET_TICK.value, EventType.THESIS_INVALIDATED.value], limit=5000
+        )
+    )
+    await resolver.start()
+    await calibration_engine.start()
+    await gate_tracker.start()
+
     feed = KrakenFeed(bus)
     feed_task = asyncio.create_task(feed.run(), name="kraken_feed")
 
@@ -135,6 +181,8 @@ async def default_lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
     app.state.portfolio = portfolio
     app.state.executor = executor
     app.state.decision_store = decision_store
+    app.state.calibration_engine = calibration_engine
+    app.state.gate_tracker = gate_tracker
 
     logger.info("gateway.ready")
     yield  # ← app serves requests here
@@ -148,6 +196,9 @@ async def default_lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
         except asyncio.CancelledError:
             pass
 
+    await gate_tracker.stop()
+    await calibration_engine.stop()
+    await resolver.stop()
     await decision_generator.stop()
     await executor.stop()
     await risk_engine.stop()
@@ -196,6 +247,7 @@ def create_app(lifespan: Any = default_lifespan) -> FastAPI:
     app.include_router(portfolio_router)
     app.include_router(halt_router)
     app.include_router(events_router)
+    app.include_router(calibration_router)
     return app
 
 

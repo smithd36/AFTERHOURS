@@ -88,7 +88,10 @@ class DecisionGenerator:
             return
         self._processed_thesis_ids.add(thesis_id)
 
-        await self._generate(p, envelope.ingest_time)
+        # event_time, not ingest_time: the decision's financial clock must be
+        # the thesis's event clock or replay produces wall-clock decisions
+        # (two-clock rule, PLANNING §4.6). Live, the two differ by milliseconds.
+        await self._generate(p, envelope.event_time)
 
     async def _generate(self, thesis: dict[str, Any], now: datetime) -> None:
         instrument: str = str(thesis.get("instrument", ""))

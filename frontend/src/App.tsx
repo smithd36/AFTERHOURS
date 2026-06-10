@@ -1,11 +1,13 @@
 import { useCallback, useEffect, useState } from "react";
 import { cn } from "@/lib/utils";
+import { CalibrationPanel } from "@/components/panels/CalibrationPanel";
 import { DecisionQueue } from "@/components/panels/DecisionQueue";
 import { MarketWatch } from "@/components/panels/MarketWatch";
 import { PortfolioPanel } from "@/components/panels/PortfolioPanel";
 import { SignalFeed } from "@/components/panels/SignalFeed";
 import { ThesisFeed } from "@/components/panels/ThesisFeed";
 import { useBackfill } from "@/hooks/useBackfill";
+import { useCalibration } from "@/hooks/useCalibration";
 import { useDecisions } from "@/hooks/useDecisions";
 import { useEventStream } from "@/hooks/useEventStream";
 import { useMarketTicks } from "@/hooks/useMarketTicks";
@@ -128,6 +130,7 @@ export default function App() {
   const { theses, handleEnvelope: handleThesis } = useTheses();
   const { decisions, handleEnvelope: handleDecision } = useDecisions();
   const { snapshot } = usePortfolio();
+  const { report, gates, handleEnvelope: handleCalibration } = useCalibration();
 
   const handleEnvelope = useCallback(
     (envelope: EventEnvelope) => {
@@ -135,8 +138,9 @@ export default function App() {
       handleSignal(envelope);
       handleThesis(envelope);
       handleDecision(envelope);
+      handleCalibration(envelope);
     },
-    [handleTick, handleSignal, handleThesis, handleDecision],
+    [handleTick, handleSignal, handleThesis, handleDecision, handleCalibration],
   );
 
   const { connected } = useEventStream(handleEnvelope);
@@ -167,6 +171,7 @@ export default function App() {
             onReject={handleReject}
           />
           <PortfolioPanel snapshot={snapshot} />
+          <CalibrationPanel report={report} gates={gates} />
         </div>
       </main>
     </div>
