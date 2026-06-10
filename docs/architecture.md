@@ -29,7 +29,7 @@ Market data feeds and signal generators. Feeds run as long-lived async tasks; si
 | `ingestion/kraken/feed.py` | **Primary feed.** Kraken WebSocket v2, no auth required, tenacity reconnect |
 | `ingestion/kraken/normalizer.py` | Raw Kraken messages → `EventEnvelope(MARKET_TICK)`. Normalises `BTC/USD` → `BTC-USD`. |
 | `ingestion/kraken/settings.py` | `KRAKEN_WS_URL`, `KRAKEN_PRODUCTS` env config |
-| `ingestion/coinbase/feed.py` | Coinbase Advanced Trade WebSocket (requires JWT auth — deferred to Phase 4) |
+| `ingestion/coinbase/feed.py` | **Secondary feed.** Coinbase Advanced Trade WebSocket (requires JWT auth — deferred to Phase 5) |
 | `ingestion/coinbase/normalizer.py` | Raw Coinbase messages → `EventEnvelope(MARKET_TICK)` |
 | `ingestion/coinbase/settings.py` | `COINBASE_WS_URL`, `COINBASE_PRODUCTS`, `COINBASE_API_KEY` env config |
 | `ingestion/alerts/generator.py` | Subscribes to `market.tick`; emits `signal.created` for 24h crosses and short-window % moves |
@@ -325,7 +325,11 @@ Font stack: Geist Mono → JetBrains Mono → Fira Code → ui-monospace. The te
 
 | Subsystem | Phase | Notes |
 |---|---|---|
+| Outcome resolution | 4 | Score decisions against realized price action at their time horizon (`decision.resolved`) |
 | Backtest harness | 4 | Point-in-time correct event replay with mock adapters |
 | Calibration engine | 4 | ECE measurement, autonomy gate tracking (Appendix B) |
-| Live exchange adapter | 4 | Coinbase Advanced Trade, read-only key, Assisted mode only |
-| Scale & autonomy | 5 | Equities, semi-auto mode, correlation risk, Strategy Lab |
+| Live exchange adapter | 5 | Assisted mode only, micro sizes; execution venue re-confirmed at phase start (ADR-007) |
+| Scale & autonomy | 6 | Equities, semi-auto mode, correlation risk, Strategy Lab |
+| Harden & extend | 7 | Performance, service extraction, advanced observability, disaster recovery |
+
+Phase 4 implementation plan: [`docs/phase4-plan.md`](phase4-plan.md).

@@ -61,7 +61,7 @@ Package dependency direction: `core/` has no dependencies on other subsystems; `
 - **Two-clock rule:** `EventEnvelope.event_time` (venue/source clock) is for all financial logic and backtesting; `ingest_time` (our clock) is for ops/latency only. Using `ingest_time` in financial decisions is a look-ahead-bias bug.
 - **Decision object** (`core/schemas/decision.py`) is the central artifact — immutable once created; status transitions are new events, not mutations; `Decision.id` is the `correlation_id` for all lifecycle events. The LLM only provides `reasoning`, `evidence[]`, `confidence`, and direction. `size_usd` and the risk verdict are computed deterministically by the risk engine — never by the LLM.
 - **Autonomy is graduated:** Observe → Paper → Assisted → Semi-auto → Supervised (`AutonomyMode`), with a kill switch (`/api/halt`, `risk.halt` event). Current phases support Observe/Paper/Assisted.
-- **API keys:** read-only, withdrawal-disabled, `.env` only. Phases 0–3 use only public endpoints (Kraken WS v2 needs no auth; Coinbase auth is deferred to Phase 4).
+- **API keys:** read-only, withdrawal-disabled, `.env` only. Phases 0–4 use only public endpoints (Kraken WS v2 is the primary feed and needs no auth; Coinbase is the secondary feed, auth deferred to Phase 5 live trading).
 
 ### LLM layer
 

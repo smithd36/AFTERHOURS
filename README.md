@@ -141,7 +141,7 @@ afterhours/
 │
 ├── ingestion/              # Market data feeds and signal generators
 │   ├── kraken/             # Kraken WebSocket v2 (primary, no auth)
-│   ├── coinbase/           # Coinbase Advanced Trade (deferred until Phase 4)
+│   ├── coinbase/           # Coinbase Advanced Trade (secondary; auth wiring in Phase 5)
 │   ├── alerts/             # PriceAlertGenerator — tick → signal.created
 │   └── news/               # RSS feed poller (CoinDesk, CoinTelegraph)
 │
@@ -182,7 +182,7 @@ afterhours/
 
 **Autonomy is graduated.** Five modes — Observe → Paper → Assisted → Semi-auto → Supervised — with explicit promotion criteria and automatic demotion triggers. Kill switch available at all times.
 
-**Free data first.** All external data is behind adapters. Phases 0–3 use Kraken WebSocket v2 (no API key needed). Coinbase is preserved and ready; auth wiring deferred to Phase 4.
+**Free data first.** All external data is behind adapters. Kraken WebSocket v2 (no API key needed) is the confirmed primary market-data source; Coinbase stays integrated as the secondary feed, with auth wiring landing alongside live trading in Phase 5 (ADR-007).
 
 See [`PLANNING.md`](PLANNING.md) for the full non-negotiables list.
 
@@ -196,8 +196,10 @@ See [`PLANNING.md`](PLANNING.md) for the full non-negotiables list.
 | **1** ✅ | Signals | Price alerts + RSS news ingestion, SignalFeed panel |
 | **2** ✅ | Thesis | Pluggable LLM thesis generation, time-based invalidation, ThesisFeed panel |
 | **3** ✅ | Risk + Paper | Decision generator, risk engine, kill switch, paper execution, portfolio/ledger, Decision Queue UI |
-| **4** | Backtest + Live | Backtesting engine, ECE calibration, live Coinbase adapter (Assisted mode only) |
-| **5** | Scale + Autonomy | Equities, semi-auto mode, correlation risk, Strategy Lab |
+| **4** | Backtest + Calibration | Backtesting engine (event-time replay, no look-ahead), decision outcome resolution, ECE calibration reporting, autonomy gate tracking |
+| **5** | Live Trading | Live exchange adapter, Assisted-only real orders at micro size, broker reconciliation |
+| **6** | Scale + Autonomy | Equities, semi-auto mode, correlation risk, Strategy Lab |
+| **7** | Harden + Extend | Performance, service extraction, advanced observability, disaster recovery |
 
 ---
 
@@ -205,7 +207,7 @@ See [`PLANNING.md`](PLANNING.md) for the full non-negotiables list.
 
 **Read-only. Withdrawal-disabled. Never committed.**
 
-Real API keys go in `.env` (gitignored). The `.env.example` template contains no real values. Phase 0–3 use only public WebSocket endpoints — no API key is needed.
+Real API keys go in `.env` (gitignored). The `.env.example` template contains no real values. Phases 0–4 use only public WebSocket endpoints — no exchange API key is needed until live trading in Phase 5.
 
 See [`docs/adr/003-api-key-security.md`](docs/adr/003-api-key-security.md).
 

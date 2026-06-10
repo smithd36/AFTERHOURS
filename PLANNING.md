@@ -1,6 +1,6 @@
 # AFTERHOURS — Architecture & Product Planning Document
 
-> **Status:** v0.1 — Phases 0–3 implemented (see README for current state); Phases 4+ pending
+> **Status:** v0.2 — Phases 0–3 implemented (see README for current state); Phases 4+ pending. Roadmap re-scoped 2026-06-09 (ADR-007): Phase 4 is now backtest + calibration only; live trading is a new Phase 5; former Phases 5/6 are now 6/7.
 > **Author:** Lead Architect
 > **Date:** 2026-06-09
 > **Audience:** Founder, engineering, future contributors
@@ -303,7 +303,7 @@ Panels (composable, draggable, keyboard-navigable — think tiling window manage
 
 ## 9. Phased Implementation Roadmap
 
-Each phase ends in something usable and de-risks the next. **No real money until Phase 4, and only after calibration evidence.**
+Each phase ends in something usable and de-risks the next. **No real money until Phase 5, and only after calibration evidence produced by Phase 4.**
 
 ### Phase 0 — Foundations (skeleton & contracts)
 - Repo, modular-monolith scaffold, the event bus, the **Decision Object + core schemas**, Postgres, config/secrets, structured logging, CI.
@@ -322,15 +322,19 @@ Each phase ends in something usable and de-risks the next. **No real money until
 - Deterministic **risk engine** (sizing, position limits, per-trade max loss, stop price, kill switch). **Decision Generator** (LLM → full `Decision` object with `prompt_hash`, evidence, confidence). **Paper execution adapter** (simulated fills + realistic slippage). **Portfolio/Ledger** (paper positions, cash, unrealized P&L). **Decision Queue UI panel** (Approve/Reject in Assisted mode). Autonomy modes: Observe + Paper + Assisted.
 - *Exit:* the full Observe → Paper → Assisted pipeline runs end-to-end on paper. The risk engine is the authoritative gatekeeper and the kill switch is always reachable. **No real money yet.**
 
-### Phase 4 — Backtest, Calibration & Live Trading
-- **Backtesting engine** with point-in-time correctness (replay event stream with mock adapters, no look-ahead). **Calibration reporting** (ECE measurement, confidence vs realized outcomes, autonomy gate tracking per Appendix B). **Live broker/exchange adapter** (Coinbase Advanced Trade first — read-only, withdrawal-disabled key, hardened secrets, MFA console). **Assisted mode only** for live trading, micro position sizes, every order human-approved.
-- *Exit:* strategies are backtested and calibration is measurable. Small real trades execute correctly, reconcile against broker ground truth, and are fully audited. Graduate to Semi-autonomous *only* on demonstrated calibration (Appendix B gates).
+### Phase 4 — Backtest & Calibration
+- **Outcome resolution**: score every shadow/paper decision against subsequent price action at its time horizon (`event_time` only) so confidence can be compared with realized outcomes. **Backtesting engine** with point-in-time correctness (replay the event stream through the same reasoning/risk/execution path with mock adapters, no look-ahead). **Calibration reporting** (ECE measurement, confidence vs realized outcomes, autonomy gate tracking per Appendix B) — the north-star metric of the project. Implementation plan: `docs/phase4-plan.md`.
+- *Exit:* strategies are backtestable with no look-ahead, and calibration is continuously measured and reported against the Appendix B gates. **Still no real money.**
 
-### Phase 5 — Scale & Autonomy
+### Phase 5 — Live Trading (Assisted)
+- **Live broker/exchange adapter** for execution (venue re-confirmed at phase start — Coinbase Advanced Trade is the standing candidate; Kraken public endpoints remain the primary *market-data* source regardless, per ADR-007). Trade-scoped, withdrawal-disabled keys, hardened secrets, MFA console, continuous reconciliation against broker ground truth. **Assisted mode only**, micro position sizes, every order human-approved. Entry requires passing the Paper → Assisted gates of Appendix B, as measured by the Phase 4 calibration engine.
+- *Exit:* small real trades execute correctly, reconcile against broker ground truth, and are fully audited. Graduate to Semi-autonomous *only* on demonstrated calibration (Appendix B gates).
+
+### Phase 6 — Scale & Autonomy
 - Add equities adapter (market hours, settlement, PDT rules), more venues, multi-instrument theses, Semi-autonomous → Supervised-autonomous modes with bounded envelopes, advanced risk (correlation/portfolio optimization), richer Strategy Lab, A/B of models.
 - *Exit:* multi-market, partially autonomous, still gated and observable.
 
-### Phase 6 — Harden & Extend
+### Phase 7 — Harden & Extend
 - Performance, extraction of hot modules to services if needed, advanced observability, optional multi-account, disaster recovery, and the "additional features" of §10 as warranted.
 
 ---
@@ -362,7 +366,7 @@ Stated plainly, as requested:
 - **"Generating trade ideas" with an LLM is the easy 20%; *trusting and controlling* them is the hard, valuable 80%.** The investment center of gravity should be the risk engine, audit trail, and calibration — not the idea generator. Anyone can prompt a model to be bullish.
 - **Returns are the wrong early metric.** Optimizing P&L on small samples manufactures overfit, overconfident strategies that blow up. Optimize calibration and auditability first; returns follow from a trustworthy process.
 - **"Complete product, not a script" cuts both ways** — resist over-engineering into premature microservices. A disciplined modular monolith is the *more* professional choice for a single-operator product at this stage.
-- **Crypto before equities.** Despite equities being "more traditional," crypto's 24/7 markets, simpler/uniform APIs, no market-hours/settlement/PDT complexity, and tiny-size accessibility make it the right *first* live target. Equities are Phase 5.
+- **Crypto before equities.** Despite equities being "more traditional," crypto's 24/7 markets, simpler/uniform APIs, no market-hours/settlement/PDT complexity, and tiny-size accessibility make it the right *first* live target. Equities are Phase 6.
 - **The LLM must never compute the numbers it shouldn't.** Sizing, risk, and statistics are deterministic code. Architecturally enforce the separation of duties (§4.5) or you inherit hallucinated math with real money behind it.
 - **Regulatory posture is a design constraint, not a footnote.** Staying single-operator/own-capital is what keeps the project simple and legal; any move beyond that is a deliberate, counsel-reviewed decision (§6.5).
 
@@ -375,15 +379,15 @@ Stated plainly, as requested:
 | # | Decision | Status | Resolution (2026-06-09) |
 |---|---|---|---|
 | 1 | **Scope** — who uses it, whose capital | ✅ **LOCKED** | **Single-operator, own-capital.** Simplest regulatory posture; stays out of advisor/broker/custody territory. Any change is a deliberate, counsel-reviewed decision. |
-| 2 | **First market & venue** | ✅ **LOCKED** | **Crypto first; equities deferred to Phase 5.** Primary venue: **Coinbase Advanced Trade** (US-regulated, free realtime WS, scoped/withdrawal-disabled keys); **Kraken** documented alternate. Provisional/swappable via CCXT — execution venue not truly committed until Phase 4; Phase 0–3 needs only the free realtime market-data feed. |
+| 2 | **First market & venue** | ✅ **LOCKED** | **Crypto first; equities deferred to Phase 6.** **Re-confirmed 2026-06-09 (ADR-007): Kraken public WS endpoints remain the primary market-data source; Coinbase stays integrated as the secondary feed.** Live *execution* venue (Coinbase Advanced Trade is the standing candidate) is committed at the start of Phase 5 — Phases 0–4 need only the free realtime market-data feeds. |
 | 3 | **Tech stack** | ✅ **LOCKED** | **Python core + TypeScript/React terminal + Postgres-centric storage (Timescale + pgvector) + event bus.** Per §4. |
-| 4 | **Data sources** (market-data + news vendors) | ✅ **LOCKED** | **Free-tier-first layered stack** (see Appendix A). Native exchange WS + CCXT for market data; CoinGecko/CryptoPanic/Finnhub free tiers + RSS for reference & news. Social sentiment flagged-off. Paid vendors deferred to Phase 5+. |
+| 4 | **Data sources** (market-data + news vendors) | ✅ **LOCKED** | **Free-tier-first layered stack** (see Appendix A). Native exchange WS + CCXT for market data; CoinGecko/CryptoPanic/Finnhub free tiers + RSS for reference & news. Social sentiment flagged-off. Paid vendors deferred to Phase 6+. |
 | 5 | **Non-negotiables** | ✅ **LOCKED (binding)** | Deterministic risk engine as authoritative gatekeeper · Decision Object as central artifact · calibration as north star · kill switch from day one. Confirmed binding — no implementation may violate these. |
 | 6 | **Autonomy doctrine** | ✅ **LOCKED** | **Balanced graduation gates** (see Appendix B). Calibration (ECE) is the primary gate; returns are only a sanity floor. Demotion triggers kept at full strength. |
 
 ### Still open before Phase 0
 - **None blocking.** All six decisions are resolved. Phase 0 is fully unblocked.
-- *Deferred, non-blocking:* re-confirm the Coinbase-vs-Kraken venue pick before Phase 4 (live execution), since Phase 0–3 only consumes the free realtime feed.
+- *Deferred, non-blocking:* ~~re-confirm the Coinbase-vs-Kraken venue pick before Phase 4 (live execution)~~ **Resolved 2026-06-09 for market data** (Kraken primary, Coinbase secondary — ADR-007); the live *execution* venue is re-confirmed at the start of Phase 5.
 
 With #1–#3 locked, **Phase 0 can begin in parallel** with resolving #4–#6, since the scaffold, event bus, and Decision Object schema don't depend on the open items:
 
@@ -399,7 +403,7 @@ With #1–#3 locked, **Phase 0 can begin in parallel** with resolving #4–#6, s
 
 **Key insight:** for crypto, the execution exchange's own WebSocket feed is the *authoritative, free* market-data source for the instruments you actually trade. We don't need a paid market-data vendor to start — we need normalization and good news/macro coverage.
 
-| Layer | Build-phase choice (free) | Upgrade path (Phase 5+) |
+| Layer | Build-phase choice (free) | Upgrade path (Phase 6+) |
 |---|---|---|
 | **Market data** — prices, OHLCV, order books | Native exchange WS/REST + **CCXT** (normalizes 100+ venues) | **CoinAPI** or **Kaiko‑Amberdata** for institutional tick/historical depth |
 | **Reference/metadata** — broad cross-asset, bundled news | **CoinGecko API** free tier (~10k calls/mo) | CoinGecko Pro |
@@ -438,4 +442,4 @@ Keeping the safety rails full-strength is what makes the faster Balanced ramp ac
 
 ---
 
-*End of v0.1. All six §12 decisions are LOCKED. Phase 0 is fully unblocked. Revise as Phase exits reveal new constraints (and re-confirm the live execution venue before Phase 4).*
+*End of v0.2. All six §12 decisions are LOCKED. Revise as Phase exits reveal new constraints (and re-confirm the live execution venue before Phase 5 — market-data sourcing is settled: Kraken primary, Coinbase secondary).*

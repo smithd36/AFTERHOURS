@@ -158,7 +158,7 @@ rm afterhours.db afterhours.db-wal afterhours.db-shm 2>/dev/null; true
 | `GATEWAY_HOST` | `0.0.0.0` | Host to bind the FastAPI server |
 | `GATEWAY_PORT` | `8000` | Port to bind the FastAPI server |
 | `KRAKEN_PRODUCTS` | `["BTC-USD","ETH-USD"]` | Instruments to subscribe to (primary feed) |
-| `COINBASE_WS_URL` | `wss://advanced-trade-ws.coinbase.com/ws` | Coinbase public WS endpoint (Phase 4) |
+| `COINBASE_WS_URL` | `wss://advanced-trade-ws.coinbase.com/ws` | Coinbase public WS endpoint (secondary feed; Phase 5) |
 | `COINBASE_PRODUCTS` | `["BTC-USD","ETH-USD"]` | Product IDs to subscribe to |
 | `NEWS_FEED_URLS` | CoinDesk + CoinTelegraph | RSS feeds to poll |
 | `NEWS_POLL_INTERVAL_SECONDS` | `300` | RSS poll interval |
