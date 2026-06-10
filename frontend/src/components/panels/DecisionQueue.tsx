@@ -56,7 +56,7 @@ function DecisionCard({
     parseFloat(decision.sizeUsd) > 0 ? "text-foreground" : "text-muted-foreground";
 
   return (
-    <div className="rounded border border-border p-3 text-xs space-y-2">
+    <div className="rounded-sm bg-muted/60 px-3 py-2.5 text-xs space-y-2">
       <div className="flex items-center justify-between gap-2">
         <div className="flex items-center gap-2">
           <span className="font-mono font-semibold">{decision.instrument}</span>
@@ -112,19 +112,19 @@ export function DecisionQueue({ decisions, mode, onExecute, onReject }: Props) {
 
   return (
     <PanelShell
-      title="Decision Queue"
-      rightSlot={pending.length > 0 ? `${pending.length} pending` : undefined}
+      title="DECISION QUEUE"
+      rightSlot={pending.length > 0 ? `${pending.length} PENDING` : undefined}
     >
       {decisions.length === 0 ? (
         <p className="px-3 py-6 text-center text-[11px] text-muted-foreground">
           No decisions yet
         </p>
       ) : (
-        <div className="space-y-2 p-3">
+        <div className="max-h-[32rem] overflow-y-auto space-y-2 p-3">
           {pending.length > 0 && (
             <>
               <p className="text-[10px] font-semibold uppercase tracking-wider text-muted-foreground">
-                Pending approval
+                PENDING APPROVAL
               </p>
               {pending.map((d) => (
                 <DecisionCard
@@ -137,7 +137,7 @@ export function DecisionQueue({ decisions, mode, onExecute, onReject }: Props) {
               ))}
               {recent.length > 0 && (
                 <p className="pt-1 text-[10px] font-semibold uppercase tracking-wider text-muted-foreground">
-                  Recent
+                  RECENT
                 </p>
               )}
             </>

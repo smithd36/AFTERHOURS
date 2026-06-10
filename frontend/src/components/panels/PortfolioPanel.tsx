@@ -20,7 +20,7 @@ function PnlValue({ value }: { value: string }) {
 export function PortfolioPanel({ snapshot }: Props) {
   if (!snapshot) {
     return (
-      <PanelShell title="Portfolio">
+      <PanelShell title="PORTFOLIO">
         <p className="px-3 py-6 text-center text-[11px] text-muted-foreground">Loading…</p>
       </PanelShell>
     );
@@ -29,10 +29,10 @@ export function PortfolioPanel({ snapshot }: Props) {
   const positions = Object.entries(snapshot.positions);
 
   return (
-    <PanelShell title="Portfolio">
-      <div className="space-y-3 p-3">
+    <PanelShell title="PORTFOLIO">
+      <div className="max-h-80 overflow-y-auto space-y-3 p-3">
         {/* Summary row */}
-        <div className="grid grid-cols-2 gap-x-4 gap-y-1 rounded border border-border p-2 text-xs">
+        <div className="grid grid-cols-2 gap-x-4 gap-y-1 rounded-sm bg-muted/60 p-2 text-xs">
           <div className="flex justify-between">
             <span className="text-muted-foreground">Cash</span>
             <span className="font-mono">${parseFloat(snapshot.cash).toFixed(2)}</span>
@@ -60,7 +60,7 @@ export function PortfolioPanel({ snapshot }: Props) {
               Open positions ({positions.length})
             </p>
             {positions.map(([instrument, pos]) => (
-              <div key={instrument} className="rounded border border-border p-2 text-xs">
+              <div key={instrument} className="rounded-sm bg-muted/60 p-2 text-xs">
                 <div className="flex items-center justify-between">
                   <div className="flex items-center gap-2">
                     <span className="font-mono font-semibold">{instrument}</span>

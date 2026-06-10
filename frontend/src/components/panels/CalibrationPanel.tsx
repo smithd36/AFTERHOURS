@@ -51,7 +51,7 @@ function ReliabilityRow({ bucket }: { bucket: CalibrationBucket }) {
 
 function GateCard({ title, gate }: { title: string; gate: GateStatus }) {
   return (
-    <div className="rounded border border-border p-2 text-xs">
+    <div className="rounded-sm bg-muted/60 p-2 text-xs">
       <div className="flex items-center justify-between">
         <span className="font-semibold">{title}</span>
         <span
@@ -93,12 +93,12 @@ export function CalibrationPanel({ report, gates }: Props) {
 
   return (
     <PanelShell
-      title="Calibration"
-      rightSlot={stats && stats.n > 0 ? `${stats.n} resolved` : undefined}
+      title="CALIBRATION"
+      rightSlot={stats && stats.n > 0 ? `${stats.n} RESOLVED` : undefined}
     >
-      <div className="space-y-3 p-3">
+      <div className="max-h-[32rem] overflow-y-auto space-y-3 p-3">
         {/* Headline ECE */}
-        <div className="flex items-baseline justify-between rounded border border-border p-2">
+        <div className="flex items-baseline justify-between rounded-sm bg-muted/60 p-2">
           <span className="text-xs text-muted-foreground">ECE</span>
           {stats && stats.ece !== null ? (
             <span className={cn("font-mono text-lg font-semibold", eceColor(stats.ece))}>
@@ -133,7 +133,7 @@ export function CalibrationPanel({ report, gates }: Props) {
         {gates && (
           <div className="space-y-2">
             <p className="text-[10px] font-semibold uppercase tracking-wider text-muted-foreground">
-              Autonomy gates
+              AUTONOMY GATES
             </p>
             <GateCard title="Observe → Paper" gate={gates.observe_to_paper} />
             <GateCard title="Paper → Assisted" gate={gates.paper_to_assisted} />

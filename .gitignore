@@ -132,6 +132,11 @@ ehthumbs.db
 .claude/
 .claude/settings.local.json
 CLAUDE.md
+.impeccable/
+DESIGN.md
+PRODUCT.md
+.coverage
+
 # TypeScript incremental build state (tsc -b)
 *.tsbuildinfo
 

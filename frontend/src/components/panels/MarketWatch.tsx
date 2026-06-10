@@ -39,6 +39,7 @@ function pctColorClass(pct: string | null): string {
 // ---------------------------------------------------------------------------
 
 const HEADERS = ["INSTRUMENT", "PRICE", "24H %", "BID", "ASK"] as const;
+const HIDE_BELOW_SM = new Set(["BID", "ASK"]);
 
 function TickItem({ tick }: { tick: TickRow }) {
   const colorClass = pctColorClass(tick.priceChangePct24h);
@@ -52,10 +53,10 @@ function TickItem({ tick }: { tick: TickRow }) {
       <td className={cn("px-3 py-1.5 text-right text-xs tabular-nums", colorClass)}>
         {formatPct(tick.priceChangePct24h)}
       </td>
-      <td className="px-3 py-1.5 text-right text-xs tabular-nums text-muted-foreground">
+      <td className="hidden sm:table-cell px-3 py-1.5 text-right text-xs tabular-nums text-muted-foreground">
         {tick.bestBid ? formatPrice(tick.bestBid) : "—"}
       </td>
-      <td className="px-3 py-1.5 text-right text-xs tabular-nums text-muted-foreground">
+      <td className="hidden sm:table-cell px-3 py-1.5 text-right text-xs tabular-nums text-muted-foreground">
         {tick.bestAsk ? formatPrice(tick.bestAsk) : "—"}
       </td>
     </tr>
@@ -100,6 +101,7 @@ export function MarketWatch({ ticks }: MarketWatchProps) {
                   className={cn(
                     "px-3 py-1 text-[10px] font-medium uppercase tracking-wider text-muted-foreground",
                     h === "INSTRUMENT" ? "text-left" : "text-right",
+                    HIDE_BELOW_SM.has(h) && "hidden sm:table-cell",
                   )}
                 >
                   {h}
