@@ -136,6 +136,8 @@ CLAUDE.md
 DESIGN.md
 PRODUCT.md
 .coverage
+docs/pre-phase6-review.md
+docs/pre-phase-6-issues.md
 
 # TypeScript incremental build state (tsc -b)
 *.tsbuildinfo
