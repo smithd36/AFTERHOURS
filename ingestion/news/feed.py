@@ -1,14 +1,20 @@
 """
 RSS/Atom news feed.
 
-Polls each configured URL every `poll_interval_seconds`. On startup it
-marks all existing items as seen so restarts don't flood the bus with
-historical headlines. Only genuinely new items emit signal.created events.
+Polls each configured URL every `poll_interval_seconds` and publishes
+signal.created for each headline not seen before.
+
+Cross-restart deduplication: the caller seeds `initial_seen` with the
+source ids (links) of news signals already in the event store. On the
+first-ever run the store is empty, so the headlines currently in the
+feeds are published immediately — the Signal Feed is never blank on a
+cold start. On restarts only genuinely new items emit events.
 """
 
 from __future__ import annotations
 
 import asyncio
+from collections.abc import Iterable
 
 import feedparser  # type: ignore[import-untyped]
 import httpx
@@ -27,18 +33,31 @@ _SEEN_CAP = 5_000  # evict oldest when the dedup set exceeds this
 class NewsFeed:
     """Polls RSS feeds and publishes signal.created for each new headline."""
 
-    def __init__(self, bus: Bus, settings: NewsFeedSettings | None = None) -> None:
+    def __init__(
+        self,
+        bus: Bus,
+        settings: NewsFeedSettings | None = None,
+        initial_seen: Iterable[str] | None = None,
+        transport: httpx.AsyncBaseTransport | None = None,
+    ) -> None:
         self._bus = bus
         self._settings = settings or NewsFeedSettings()
         self._normalizer = NewsNormalizer()
+        self._transport = transport  # injectable for tests (httpx.MockTransport)
         # Ordered dict used as an ordered set: insertion order = arrival order.
         # Oldest entry is evicted when _SEEN_CAP is reached.
-        self._seen: dict[str, None] = {}
+        self._seen: dict[str, None] = dict.fromkeys(initial_seen or ())
 
     async def run(self) -> None:
-        # Mark all currently-live items as seen before entering the publish loop.
-        await self._poll(mark_only=True)
-        logger.info("news_feed.ready", feeds=len(self._settings.feed_urls))
+        try:
+            await self._poll()
+        except Exception:
+            logger.exception("news_feed.poll_error")
+        logger.info(
+            "news_feed.ready",
+            feeds=len(self._settings.feed_urls),
+            seeded=len(self._seen),
+        )
 
         while True:
             await asyncio.sleep(self._settings.poll_interval_seconds)
@@ -49,25 +68,36 @@ class NewsFeed:
             except Exception:
                 logger.exception("news_feed.poll_error")
 
-    async def _poll(self, mark_only: bool = False) -> None:
-        async with httpx.AsyncClient(timeout=15.0) as client:
+    async def _poll(self) -> None:
+        # follow_redirects: some feeds (e.g. CoinDesk) sit behind a permanent
+        # redirect; httpx does not follow redirects by default and a 3xx body
+        # parses as an empty feed without ever raising.
+        async with httpx.AsyncClient(
+            timeout=15.0, follow_redirects=True, transport=self._transport
+        ) as client:
             for url in self._settings.feed_urls:
                 try:
-                    await self._fetch(client, url, mark_only)
+                    await self._fetch(client, url)
                 except asyncio.CancelledError:
                     raise
                 except Exception:
                     logger.warning("news_feed.fetch_failed", url=url)
 
-    async def _fetch(
-        self,
-        client: httpx.AsyncClient,
-        url: str,
-        mark_only: bool,
-    ) -> None:
+    async def _fetch(self, client: httpx.AsyncClient, url: str) -> None:
         resp = await client.get(url)
         resp.raise_for_status()
         parsed = feedparser.parse(resp.text)
+
+        if not parsed.entries:
+            # A healthy feed always has entries; zero means a broken URL,
+            # a non-feed response, or a parse failure — surface it.
+            logger.warning(
+                "news_feed.empty_feed",
+                url=url,
+                status_code=resp.status_code,
+                bozo=bool(getattr(parsed, "bozo", False)),
+            )
+            return
 
         new_count = 0
         for entry in parsed.entries:
@@ -75,14 +105,12 @@ class NewsFeed:
             if not link or link in self._seen:
                 continue
             self._mark_seen(link)
-            if mark_only:
-                continue
             envelope = self._normalizer.normalize(entry)
             if envelope is not None:
                 await self._bus.publish(envelope)
                 new_count += 1
 
-        if not mark_only and new_count:
+        if new_count:
             logger.info("news_feed.published", url=url, count=new_count)
 
     def _mark_seen(self, link: str) -> None:

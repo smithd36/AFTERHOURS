@@ -34,6 +34,7 @@ async def _lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
 
     app.state.bus = bus
     app.state.broadcaster = broadcaster
+    app.state.event_store = store
 
     yield
 
@@ -85,6 +86,65 @@ class TestStatusEndpoint:
         data = client.get("/api/status").json()
         assert "connected_clients" in data
         assert data["connected_clients"] == 0
+
+
+# ---------------------------------------------------------------------------
+# Recent events endpoint (panel rehydration)
+# ---------------------------------------------------------------------------
+
+
+class TestRecentEventsEndpoint:
+    @staticmethod
+    def _publish(client: TestClient, event_type: str, payload: dict) -> None:
+        from datetime import UTC, datetime
+
+        from core.schemas import EventEnvelope
+
+        env = EventEnvelope(
+            event_type=event_type,
+            source="test",
+            event_time=datetime.now(UTC),
+            ingest_time=datetime.now(UTC),
+            payload=payload,
+        )
+        client.portal.call(client.app.state.bus.publish, env)
+
+    def test_returns_only_requested_types(self, client: TestClient) -> None:
+        self._publish(client, "market.tick", {"instrument": "BTC-USD", "price": "1"})
+        self._publish(client, "signal.created", {"id": "sig-1"})
+
+        data = client.get("/api/events/recent?types=signal.created").json()
+        assert len(data["events"]) == 1
+        assert data["events"][0]["event_type"] == "signal.created"
+
+    def test_returns_chronological_order(self, client: TestClient) -> None:
+        self._publish(client, "signal.created", {"id": "sig-1"})
+        self._publish(client, "signal.created", {"id": "sig-2"})
+
+        data = client.get("/api/events/recent?types=signal.created").json()
+        ids = [e["payload"]["id"] for e in data["events"]]
+        assert ids == ["sig-1", "sig-2"]
+
+    def test_multiple_types(self, client: TestClient) -> None:
+        self._publish(client, "signal.created", {"id": "sig-1"})
+        self._publish(client, "thesis.created", {"id": "th-1"})
+
+        data = client.get(
+            "/api/events/recent?types=signal.created,thesis.created"
+        ).json()
+        assert len(data["events"]) == 2
+
+    def test_rejects_unknown_type(self, client: TestClient) -> None:
+        resp = client.get("/api/events/recent?types=not.a.topic")
+        assert resp.status_code == 422
+
+    def test_respects_limit(self, client: TestClient) -> None:
+        for i in range(5):
+            self._publish(client, "signal.created", {"id": f"sig-{i}"})
+
+        data = client.get("/api/events/recent?types=signal.created&limit=2").json()
+        ids = [e["payload"]["id"] for e in data["events"]]
+        assert ids == ["sig-3", "sig-4"]  # newest two, oldest first
 
 
 # ---------------------------------------------------------------------------

@@ -75,6 +75,15 @@ Open `http://localhost:5173`.
 | `GET /api/health` | Liveness check — returns `{"status":"ok","timestamp":"..."}` |
 | `GET /api/status` | Gateway status — includes `connected_clients` count |
 | `WS /ws` | Event stream — sends `EventEnvelope` JSON for all bus events |
+| `GET /api/events/recent?types=…&limit=…` | Recent events from the audit log (UI rehydration) |
+| `GET /api/mode` / `POST /api/mode` | Read / change autonomy mode (validated transitions) |
+| `GET /api/decisions` | All tracked decisions |
+| `GET /api/decisions/pending` | Decisions awaiting operator action (Assisted mode) |
+| `POST /api/decisions/{id}/execute` | Operator executes a pending decision |
+| `POST /api/decisions/{id}/reject` | Operator rejects a pending decision |
+| `GET /api/portfolio` | Paper portfolio snapshot — cash, positions, P&L |
+| `POST /api/portfolio/positions/{instrument}/close` | Close an open paper position |
+| `POST /api/halt` | Kill switch — emits `risk.halt`, forces OBSERVE mode |
 
 ---
 
@@ -148,10 +157,21 @@ rm afterhours.db afterhours.db-wal afterhours.db-shm 2>/dev/null; true
 | `DB_PATH` | `afterhours.db` | SQLite database file path |
 | `GATEWAY_HOST` | `0.0.0.0` | Host to bind the FastAPI server |
 | `GATEWAY_PORT` | `8000` | Port to bind the FastAPI server |
-| `COINBASE_WS_URL` | `wss://advanced-trade-ws.coinbase.com/ws` | Coinbase public WS endpoint |
+| `KRAKEN_PRODUCTS` | `["BTC-USD","ETH-USD"]` | Instruments to subscribe to (primary feed) |
+| `COINBASE_WS_URL` | `wss://advanced-trade-ws.coinbase.com/ws` | Coinbase public WS endpoint (Phase 4) |
 | `COINBASE_PRODUCTS` | `["BTC-USD","ETH-USD"]` | Product IDs to subscribe to |
+| `NEWS_FEED_URLS` | CoinDesk + CoinTelegraph | RSS feeds to poll |
+| `NEWS_POLL_INTERVAL_SECONDS` | `300` | RSS poll interval |
+| `ALERT_PRICE_MOVE_PCT_THRESHOLD` | `0.5` | % move that fires a `pct_move` price alert |
+| `ALERT_PRICE_MOVE_WINDOW_MINUTES` | `15` | Rolling window for the % move calculation |
+| `ALERT_COOLDOWN_MINUTES` | `10` | Min gap between repeat alerts of the same type |
+| `LLM_PROVIDER` | `ollama` | `ollama` \| `groq` \| `mistral` \| `openrouter` \| `anthropic` \| `openai` |
+| `THESIS_MIN_SIGNALS_TO_TRIGGER` | `3` | Signals per instrument needed to trigger a thesis |
+| `THESIS_SIGNAL_WINDOW_MINUTES` | `15` | Window the trigger count must fall within |
+| `RISK_*` | see `risk/settings.py` | Position/loss limits, stop-loss distance |
+| `PORTFOLIO_*` | see `portfolio/settings.py` | Initial cash, simulated slippage and fees |
 
-Variables are loaded from `.env` by pydantic-settings. All settings classes use `env_prefix` matching their module (e.g., `COINBASE_*` for `CoinbaseFeedSettings`).
+Variables are loaded from `.env` by pydantic-settings. All settings classes use `env_prefix` matching their module (e.g., `COINBASE_*` for `CoinbaseFeedSettings`). `.env.example` documents every variable.
 
 ---
 

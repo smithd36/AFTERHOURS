@@ -8,17 +8,23 @@ A modular monolith that connects live market data, LLM-generated trade theses, a
 
 ## Status
 
-**Phase 2 complete.** LLM thesis layer live end-to-end:
+**Phase 3 complete.** Full decision pipeline live end-to-end, through paper execution:
 
 ```
-Kraken WebSocket → InProcessBus → SQLiteEventStore → FastAPI /ws → React terminal
+Kraken WebSocket → InProcessBus → SQLiteEventStore → FastAPI /ws + /api → React terminal
                                         ↑
               PriceAlertGenerator (ticks → signal.created)
               RSSNewsFeed         (CoinDesk / CoinTelegraph → signal.created)
               ThesisGenerator     (signals → LLM → thesis.created)
               ThesisInvalidator   (time horizon elapsed → thesis.invalidated)
+              DecisionGenerator   (theses → LLM → decision.proposed)
+              RiskEngine          (deterministic sizing/limits → decision.approved/rejected)
+              PaperExecutor       (simulated fills → order.filled)
+              Portfolio           (positions, cash, P&L → portfolio.position_updated)
 ```
 
+Autonomy modes Observe / Paper / Assisted are operational with a kill-switch HALT,
+Decision Queue (operator approve/reject in Assisted mode), and portfolio panel.
 LLM provider is pluggable: Groq · Mistral · OpenRouter (free) or Anthropic · OpenAI · Ollama.
 
 ---
@@ -89,32 +95,33 @@ pytest --cov=core --cov=gateway --cov=ingestion   # with coverage
 ## Architecture
 
 ```
-┌─────────────────────────────────────────────────────────┐
-│                    AFTERHOURS process                    │
-│                                                         │
-│  ┌─────────────┐    ┌────────────────┐                  │
-│  │  Ingestion  │───▶│  InProcessBus  │◀─── subscribers  │
-│  │  (Coinbase) │    │                │                  │
-│  └─────────────┘    │  persist-first │                  │
-│                     │  then fan-out  │                  │
-│  ┌─────────────┐    └───────┬────────┘                  │
-│  │  Risk Engine│            │                           │
-│  │  (Phase 1+) │            ▼                           │
-│  └─────────────┘    ┌────────────────┐                  │
-│                     │ SqliteEventStore│                  │
-│  ┌─────────────┐    │  (events table)│                  │
-│  │  LLM Layer  │    └────────────────┘                  │
-│  │  (Phase 1+) │                                        │
-│  └─────────────┘    ┌────────────────┐                  │
-│                     │    FastAPI     │                  │
-│                     │  /ws /api      │                  │
-│                     └───────┬────────┘                  │
-└─────────────────────────────┼───────────────────────────┘
-                              │ WebSocket
-                     ┌────────▼────────┐
-                     │  React terminal  │
-                     │  (Vite + TS)     │
-                     └─────────────────┘
+┌──────────────────────────────────────────────────────────┐
+│                    AFTERHOURS process                     │
+│                                                          │
+│  ┌──────────────┐    ┌────────────────┐                  │
+│  │  Ingestion   │───▶│  InProcessBus  │◀─── subscribers  │
+│  │ (Kraken, RSS)│    │                │                  │
+│  └──────────────┘    │  persist-first │                  │
+│                      │  then fan-out  │                  │
+│  ┌──────────────┐    └───────┬────────┘                  │
+│  │  Reasoning   │            │                           │
+│  │ (LLM theses  │            ▼                           │
+│  │ + decisions) │    ┌─────────────────┐                 │
+│  └──────────────┘    │ SqliteEventStore│                 │
+│                      │  (events table) │                 │
+│  ┌──────────────┐    └─────────────────┘                 │
+│  │ Risk Engine  │                                        │
+│  └──────────────┘    ┌────────────────┐                  │
+│  ┌──────────────┐    │    FastAPI     │                  │
+│  │PaperExecutor │    │   /ws  /api    │                  │
+│  │ + Portfolio  │    └───────┬────────┘                  │
+│  └──────────────┘            │                           │
+└──────────────────────────────┼───────────────────────────┘
+                               │ WebSocket + REST
+                      ┌────────▼────────┐
+                      │  React terminal │
+                      │  (Vite + TS)    │
+                      └─────────────────┘
 ```
 
 All inter-subsystem communication flows through the event bus as `EventEnvelope` objects. Consumers subscribe by topic prefix (`"market.*"`, `"decision.*"`, `"*"`). The bus persists every event to SQLite before fan-out — the event store is the audit log.
@@ -138,12 +145,21 @@ afterhours/
 │   ├── alerts/             # PriceAlertGenerator — tick → signal.created
 │   └── news/               # RSS feed poller (CoinDesk, CoinTelegraph)
 │
+├── reasoning/              # LLM layer
+│   ├── llm/                # LLMProvider ABC + Anthropic/OpenAI/Ollama/compatible providers
+│   ├── thesis/             # ThesisGenerator, ThesisInvalidator, prompts
+│   └── decision/           # DecisionGenerator — thesis → decision.proposed
+│
+├── risk/                   # Deterministic risk engine — sizing, limits, stop-loss
+├── portfolio/              # Paper trading — ledger, PaperExecutor, fills
+│
 ├── gateway/                # FastAPI app — HTTP + WebSocket gateway
+│   └── routes/             # /api/mode, /api/decisions, /api/portfolio, /api/halt, /api/events
 │
 ├── frontend/               # React terminal UI
 │   └── src/
-│       ├── components/     # UI components — MarketWatch, SignalFeed, PanelShell
-│       ├── hooks/          # useEventStream, useMarketTicks, useSignals
+│       ├── components/     # MarketWatch, SignalFeed, ThesisFeed, DecisionQueue, PortfolioPanel
+│       ├── hooks/          # useEventStream, useBackfill, useSignals, useTheses, useDecisions, …
 │       └── types/          # TypeScript mirror of core/schemas
 │
 ├── tests/                  # pytest test suite
@@ -179,7 +195,7 @@ See [`PLANNING.md`](PLANNING.md) for the full non-negotiables list.
 | **0** ✅ | Infrastructure | Live ticks end-to-end: exchange → bus → DB → screen |
 | **1** ✅ | Signals | Price alerts + RSS news ingestion, SignalFeed panel |
 | **2** ✅ | Thesis | Pluggable LLM thesis generation, time-based invalidation, ThesisFeed panel |
-| **3** | Risk + Paper | Decision generator, risk engine, kill switch, paper execution, portfolio/ledger, Decision Queue UI |
+| **3** ✅ | Risk + Paper | Decision generator, risk engine, kill switch, paper execution, portfolio/ledger, Decision Queue UI |
 | **4** | Backtest + Live | Backtesting engine, ECE calibration, live Coinbase adapter (Assisted mode only) |
 | **5** | Scale + Autonomy | Equities, semi-auto mode, correlation risk, Strategy Lab |
 

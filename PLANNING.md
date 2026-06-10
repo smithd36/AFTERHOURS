@@ -1,6 +1,6 @@
 # AFTERHOURS — Architecture & Product Planning Document
 
-> **Status:** Draft v0.1 — pre-implementation
+> **Status:** v0.1 — Phases 0–3 implemented (see README for current state); Phases 4+ pending
 > **Author:** Lead Architect
 > **Date:** 2026-06-09
 > **Audience:** Founder, engineering, future contributors

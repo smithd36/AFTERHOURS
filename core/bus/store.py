@@ -56,6 +56,12 @@ class InMemoryEventStore:
     async def append(self, envelope: EventEnvelope) -> None:
         self.events.append(envelope)
 
+    async def recent(
+        self, event_types: list[str], limit: int = 200
+    ) -> list[EventEnvelope]:
+        matching = [e for e in self.events if e.event_type in event_types]
+        return matching[-limit:]
+
     async def close(self) -> None:
         pass
 
@@ -109,6 +115,49 @@ class SqliteEventStore:
             event_id=data["id"],
             event_type=data["event_type"],
         )
+
+    async def recent(
+        self, event_types: list[str], limit: int = 200
+    ) -> list[EventEnvelope]:
+        """
+        The newest `limit` events of the given types, in chronological order.
+
+        Used by the gateway to rehydrate UI panels on page load — clients
+        replay these through the same reducers that handle live WS events.
+        """
+        if not event_types:
+            return []
+
+        placeholders = ", ".join("?" * len(event_types))
+        cursor = await self._conn.execute(
+            f"""
+            SELECT id, event_type, source, schema_version,
+                   event_time, ingest_time, correlation_id, payload
+            FROM events
+            WHERE event_type IN ({placeholders})
+            ORDER BY event_time DESC
+            LIMIT ?
+            """,
+            (*event_types, limit),
+        )
+        rows = await cursor.fetchall()
+        await cursor.close()
+
+        envelopes = [
+            EventEnvelope(
+                id=row[0],
+                event_type=row[1],
+                source=row[2],
+                schema_version=row[3],
+                event_time=row[4],
+                ingest_time=row[5],
+                correlation_id=row[6],
+                payload=json.loads(row[7]),
+            )
+            for row in rows
+        ]
+        envelopes.reverse()  # DESC query → chronological for replay
+        return envelopes
 
     async def close(self) -> None:
         await self._conn.close()

@@ -34,7 +34,7 @@ Market data feeds and signal generators. Feeds run as long-lived async tasks; si
 | `ingestion/coinbase/settings.py` | `COINBASE_WS_URL`, `COINBASE_PRODUCTS`, `COINBASE_API_KEY` env config |
 | `ingestion/alerts/generator.py` | Subscribes to `market.tick`; emits `signal.created` for 24h crosses and short-window % moves |
 | `ingestion/alerts/settings.py` | `ALERT_PRICE_MOVE_PCT_THRESHOLD`, `ALERT_COOLDOWN_MINUTES` env config |
-| `ingestion/news/feed.py` | Polls RSS feeds (CoinDesk, CoinTelegraph) every 5 min; marks existing items on startup |
+| `ingestion/news/feed.py` | Polls RSS feeds (CoinDesk, CoinTelegraph) every 5 min. Publishes current headlines on first-ever run; restarts dedupe against the event store |
 | `ingestion/news/normalizer.py` | RSS entry → `EventEnvelope(SIGNAL_CREATED)` with keyword-based instrument extraction |
 | `ingestion/news/settings.py` | `NEWS_FEED_URLS`, `NEWS_POLL_INTERVAL_SECONDS` env config |
 
@@ -55,6 +55,9 @@ LLM thesis layer. Converts accumulated signals into structured trade theses via 
 | `reasoning/thesis/invalidator.py` | Subscribes to `thesis.created`; emits `thesis.invalidated` when time horizon elapses |
 | `reasoning/thesis/prompt.py` | Prompt templates — system message + JSON schema instruction |
 | `reasoning/thesis/settings.py` | `ThesisSettings` — trigger threshold, window, cooldown, expiry, max tokens |
+| `reasoning/decision/generator.py` | Subscribes to `thesis.created`; calls LLM for a trade proposal; emits `decision.proposed` with `prompt_hash`, evidence, ModelInfo. `size_usd` is always `0` here — the risk engine sets it. |
+| `reasoning/decision/prompt.py` | Decision prompt templates |
+| `reasoning/decision/settings.py` | `DecisionSettings` — max tokens |
 
 **Supported providers:**
 
@@ -67,14 +70,42 @@ LLM thesis layer. Converts accumulated signals into structured trade theses via 
 | `anthropic` | Paid | `claude-haiku-4-5-20251001` |
 | `openai` | Paid | `gpt-4o-mini` |
 
+### `risk/`
+
+The deterministic gatekeeper. Every `decision.proposed` passes through here before any capital (real or simulated) is committed. The LLM cannot bypass it.
+
+| Module | Responsibility |
+|---|---|
+| `risk/engine.py` | Pre-trade checks (mode, position limits, daily-loss circuit breaker), deterministic sizing, stop price; emits `decision.approved`/`decision.rejected`. Watches ticks for stop-loss breaches → `risk.limit_breached` |
+| `risk/sizing.py` | `deterministic_size()` — position size from portfolio value + loss limits |
+| `risk/settings.py` | `RISK_MAX_POSITION_PCT`, `RISK_MAX_TRADE_LOSS_PCT`, `RISK_STOP_LOSS_PCT`, `RISK_MAX_OPEN_POSITIONS`, `RISK_MAX_DAILY_LOSS_PCT` |
+
+In OBSERVE mode every proposal is rejected with a `shadow decision` reason — logged for calibration, never executed.
+
+### `portfolio/`
+
+Paper trading ledger and execution.
+
+| Module | Responsibility |
+|---|---|
+| `portfolio/ledger.py` | `Portfolio` — positions, cash, realized/unrealized P&L marked against live ticks; emits `portfolio.position_updated` |
+| `portfolio/executor.py` | `PaperExecutor` — simulated fills with slippage + fees. PAPER mode auto-fills `decision.approved`; ASSISTED mode parks decisions until the operator executes/rejects via the API. Closes positions on `risk.limit_breached` |
+| `portfolio/models.py` | Position and snapshot models |
+| `portfolio/settings.py` | `PORTFOLIO_INITIAL_CASH`, `PORTFOLIO_SLIPPAGE_PCT`, `PORTFOLIO_FEE_PCT` |
+
 ### `gateway/`
 
 The FastAPI application. Exposes HTTP endpoints and the WebSocket feed. Manages the application lifespan.
 
 | Module | Responsibility |
 |---|---|
-| `gateway/app.py` | `create_app()` factory, `default_lifespan`, routes |
+| `gateway/app.py` | `create_app()` factory, `default_lifespan`, health/status/WS routes |
 | `gateway/broadcaster.py` | `Broadcaster` — subscribes to bus, fans out to WS clients |
+| `gateway/routes/mode.py` | `GET/POST /api/mode` — autonomy mode with validated transitions |
+| `gateway/routes/decisions.py` | `GET /api/decisions`, `GET /api/decisions/pending`, `POST /api/decisions/{id}/execute|reject` (Assisted-mode operator actions) |
+| `gateway/routes/portfolio.py` | `GET /api/portfolio`, `POST /api/portfolio/positions/{instrument}/close` |
+| `gateway/routes/halt.py` | `POST /api/halt` — kill switch; emits `risk.halt` and forces OBSERVE |
+| `gateway/routes/events.py` | `GET /api/events/recent` — recent events from the audit log for UI panel rehydration |
 | `gateway/settings.py` | `HOST`, `PORT`, `CORS_ORIGINS` env config |
 
 ### `frontend/`
@@ -84,14 +115,21 @@ React terminal UI built with Vite, TypeScript, Tailwind CSS v4, and shadcn/ui (n
 | Module | Responsibility |
 |---|---|
 | `hooks/useEventStream.ts` | WS connection to `/ws`, exponential backoff reconnect |
+| `hooks/useBackfill.ts` | On mount, fetches `/api/events/recent` and replays history through the same reducers as live events |
 | `hooks/useMarketTicks.ts` | `useReducer`-backed tick map; dispatches on `market.tick` |
 | `hooks/useSignals.ts` | Accumulates last 50 `signal.created` events; deduplicates by id |
 | `hooks/useTheses.ts` | Accumulates last 20 `thesis.created`; updates status on `thesis.invalidated` |
+| `hooks/useDecisions.ts` | Decision rows keyed by id; status updated by `decision.approved`/`decision.rejected` |
+| `hooks/usePortfolio.ts` | Portfolio snapshot from `/api/portfolio` + `portfolio.position_updated` events |
 | `components/panels/MarketWatch.tsx` | Live tick table with bullish/bearish price colouring |
 | `components/panels/SignalFeed.tsx` | Scrollable signal list; PRICE/NEWS badges; relative-age labels |
 | `components/panels/ThesisFeed.tsx` | Thesis cards; LONG/SHORT/NEUTRAL + ACTIVE/EXPIRED/INVALIDATED badges; invalidation conditions |
+| `components/panels/DecisionQueue.tsx` | Decision cards with risk verdict; EXECUTE/REJECT buttons in Assisted mode |
+| `components/panels/PortfolioPanel.tsx` | Cash, positions, unrealized P&L |
 | `components/layout/PanelShell.tsx` | Reusable terminal panel (header bar + content slot) |
 | `types/core.ts` | TypeScript mirror of `core/schemas/*.py` |
+
+The header bar carries the OBSERVE/PAPER/ASSISTED mode switch (`/api/mode`) and the HALT kill switch (`/api/halt`).
 
 ---
 
@@ -148,6 +186,33 @@ React terminal UI built with Vite, TypeScript, Tailwind CSS v4, and shadcn/ui (n
 
 4. Broadcaster._fanout → browser → useSignals → SignalFeed panel
 ```
+
+### Decision pipeline (Phase 3)
+
+```
+1. ThesisGenerator
+   └─ ≥ THESIS_MIN_SIGNALS_TO_TRIGGER signals for one instrument within the
+      window → LLM call → thesis.created
+
+2. DecisionGenerator._handle_thesis(envelope)
+   └─ LLM call → decision.proposed
+      (size_usd = 0; prompt_hash = sha256 of the rendered prompt)
+
+3. RiskEngine._handle_proposed(envelope)
+   ├─ OBSERVE mode        → decision.rejected ("shadow decision")
+   ├─ limit breach        → decision.rejected (reasons in risk.rejection_reasons)
+   └─ otherwise           → deterministic size + stop price → decision.approved
+
+4. PaperExecutor._handle_approved(envelope)
+   ├─ PAPER mode          → simulated fill (slippage + fee) → order.filled
+   └─ ASSISTED mode       → parked in pending queue
+        └─ operator POST /api/decisions/{id}/execute → order.filled
+
+5. Portfolio (subscribes to order.filled, market.tick)
+   └─ positions, cash, P&L → portfolio.position_updated → PortfolioPanel
+```
+
+Stop-loss: the risk engine watches every tick against open positions' stop prices; a breach emits `risk.limit_breached` and the executor closes the position.
 
 ### Event persistence
 
@@ -260,11 +325,6 @@ Font stack: Geist Mono → JetBrains Mono → Fira Code → ui-monospace. The te
 
 | Subsystem | Phase | Notes |
 |---|---|---|
-| Decision generator | 3 | LLM → full Decision Object with prompt_hash, evidence, ModelInfo |
-| Risk engine | 3 | Deterministic sizing, position limits, stop price, kill switch |
-| Paper execution adapter | 3 | Simulated fills with slippage; Observe/Paper/Assisted modes |
-| Portfolio/Ledger | 3 | Paper positions, cash, unrealized P&L against live ticks |
-| Decision Queue UI | 3 | Approve/Reject panel for Assisted mode |
 | Backtest harness | 4 | Point-in-time correct event replay with mock adapters |
 | Calibration engine | 4 | ECE measurement, autonomy gate tracking (Appendix B) |
 | Live exchange adapter | 4 | Coinbase Advanced Trade, read-only key, Assisted mode only |

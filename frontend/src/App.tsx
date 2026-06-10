@@ -5,6 +5,7 @@ import { MarketWatch } from "@/components/panels/MarketWatch";
 import { PortfolioPanel } from "@/components/panels/PortfolioPanel";
 import { SignalFeed } from "@/components/panels/SignalFeed";
 import { ThesisFeed } from "@/components/panels/ThesisFeed";
+import { useBackfill } from "@/hooks/useBackfill";
 import { useDecisions } from "@/hooks/useDecisions";
 import { useEventStream } from "@/hooks/useEventStream";
 import { useMarketTicks } from "@/hooks/useMarketTicks";
@@ -139,6 +140,7 @@ export default function App() {
   );
 
   const { connected } = useEventStream(handleEnvelope);
+  useBackfill(handleEnvelope);
 
   return (
     <div className="flex h-screen w-screen flex-col bg-background text-foreground">

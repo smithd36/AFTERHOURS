@@ -44,7 +44,13 @@ from reasoning.thesis import ThesisGenerator, ThesisInvalidator
 from risk import RiskEngine
 
 from .broadcaster import Broadcaster
-from .routes import decisions_router, halt_router, mode_router, portfolio_router
+from .routes import (
+    decisions_router,
+    events_router,
+    halt_router,
+    mode_router,
+    portfolio_router,
+)
 from .settings import GatewaySettings
 
 logger = structlog.get_logger(__name__)
@@ -109,13 +115,22 @@ async def default_lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
     feed = KrakenFeed(bus)
     feed_task = asyncio.create_task(feed.run(), name="kraken_feed")
 
-    news_feed = NewsFeed(bus)
+    # Seed cross-restart dedup from the audit log so restarting doesn't
+    # re-publish headlines already emitted as signals.
+    seen_links = {
+        sid
+        for e in await store.recent([EventType.SIGNAL_CREATED.value], limit=500)
+        if e.source == "rss_news_feed"
+        and (sid := e.payload.get("provenance", {}).get("source_id"))
+    }
+    news_feed = NewsFeed(bus, initial_seen=seen_links)
     news_task = asyncio.create_task(news_feed.run(), name="news_feed")
 
     # Store on app.state so route handlers can access them.
     app.state.bus = bus
     app.state.broadcaster = broadcaster
     app.state.conn = conn
+    app.state.event_store = store
     app.state.autonomy_mode = initial_mode
     app.state.portfolio = portfolio
     app.state.executor = executor
@@ -180,6 +195,7 @@ def create_app(lifespan: Any = default_lifespan) -> FastAPI:
     app.include_router(decisions_router)
     app.include_router(portfolio_router)
     app.include_router(halt_router)
+    app.include_router(events_router)
     return app
 
 

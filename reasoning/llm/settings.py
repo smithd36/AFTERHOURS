@@ -26,7 +26,12 @@ PROVIDER_BASE_URLS: dict[str, str] = {
 
 
 class LLMSettings(BaseSettings):
-    model_config = SettingsConfigDict(env_prefix="LLM_", extra="ignore")
+    model_config = SettingsConfigDict(
+        env_prefix="LLM_",
+        env_file=".env",
+        env_file_encoding="utf-8",
+        extra="ignore",
+    )
 
     provider: Provider = "ollama"
     # Empty string → factory fills in the provider-appropriate default from PROVIDER_DEFAULT_MODELS

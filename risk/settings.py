@@ -7,7 +7,12 @@ from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
 class RiskSettings(BaseSettings):
-    model_config = SettingsConfigDict(env_prefix="RISK_")
+    model_config = SettingsConfigDict(
+        env_prefix="RISK_",
+        env_file=".env",
+        env_file_encoding="utf-8",
+        extra="ignore",
+    )
 
     # Sizing
     max_position_pct: float = 0.05       # max 5% of portfolio per position
