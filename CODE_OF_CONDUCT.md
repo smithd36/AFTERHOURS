@@ -25,7 +25,7 @@ This code of conduct applies to all project spaces: GitHub issues, pull requests
 
 ## Enforcement
 
-The project maintainer (@smithd36) will address reported violations at their discretion. Responses may include a warning, removal of content, or being blocked from the project. Report concerns to **smithproductionsdaily@gmail.com**.
+The project maintainer (@smithd36) will address reported violations at their discretion. Responses may include a warning, removal of content, or being blocked from the project. Report concerns to **hello@originfoundry.dev**.
 
 ## Attribution
 

@@ -23,7 +23,7 @@ The following are out of scope:
 
 Do not open a public GitHub issue for a security vulnerability.
 
-Send a report to **smithproductionsdaily@gmail.com** with:
+Send a report to **hello@originfoundry.dev** with:
 
 - A description of the vulnerability and affected component
 - Steps to reproduce or a proof-of-concept (redact any real credentials)
