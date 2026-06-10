@@ -25,20 +25,34 @@ export interface TickRow {
 
 type TickState = Record<string, TickRow>;
 
-function reducer(state: TickState, payload: MarketTickPayload): TickState {
-  if (!payload.instrument) return state;
-  return {
-    ...state,
-    [payload.instrument]: {
-      instrument: payload.instrument,
-      price: payload.price,
-      bestBid: payload.best_bid ?? null,
-      bestAsk: payload.best_ask ?? null,
-      volume24h: payload.volume_24h ?? null,
-      priceChangePct24h: payload.price_change_pct_24h ?? null,
-      lastUpdated: Date.now(),
-    },
-  };
+type Action =
+  | { type: "tick"; payload: MarketTickPayload }
+  | { type: "remove_instrument"; instrument: string };
+
+function reducer(state: TickState, action: Action): TickState {
+  if (action.type === "tick") {
+    const p = action.payload;
+    if (!p.instrument) return state;
+    return {
+      ...state,
+      [p.instrument]: {
+        instrument: p.instrument,
+        price: p.price,
+        bestBid: p.best_bid ?? null,
+        bestAsk: p.best_ask ?? null,
+        volume24h: p.volume_24h ?? null,
+        priceChangePct24h: p.price_change_pct_24h ?? null,
+        lastUpdated: Date.now(),
+      },
+    };
+  }
+  if (action.type === "remove_instrument") {
+    if (!(action.instrument in state)) return state;
+    const next = { ...state };
+    delete next[action.instrument];
+    return next;
+  }
+  return state;
 }
 
 export function useMarketTicks(): {
@@ -49,7 +63,10 @@ export function useMarketTicks(): {
 
   const handleEnvelope = useCallback((envelope: EventEnvelope) => {
     if (envelope.event_type === "market.tick") {
-      dispatch(envelope.payload as unknown as MarketTickPayload);
+      dispatch({ type: "tick", payload: envelope.payload as unknown as MarketTickPayload });
+    } else if (envelope.event_type === "watchlist.instrument_removed") {
+      const p = envelope.payload as Record<string, unknown>;
+      dispatch({ type: "remove_instrument", instrument: String(p.instrument ?? "") });
     }
   }, []);
 

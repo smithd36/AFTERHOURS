@@ -36,13 +36,17 @@ from core.db import migrate, open_db
 from core.logging import configure_logging
 from core.schemas.events import AutonomyMode, EventEnvelope, EventType
 from ingestion.alerts import PriceAlertGenerator
+from ingestion.equity import EquityFeed
 from ingestion.kraken import KrakenFeed
 from ingestion.news import NewsFeed
+from ingestion.pruner import TickPruner
+from ingestion.router import FeedRouter
 from portfolio import PaperExecutor, Portfolio
 from reasoning.decision import DecisionGenerator
 from reasoning.llm import CachingProvider, JsonFileLLMCache, LLMSettings, create_provider
 from reasoning.thesis import ThesisGenerator, ThesisInvalidator
 from risk import RiskEngine
+from watchlist import SqliteWatchlistStore, WatchlistManager
 
 from .broadcaster import Broadcaster
 from .routes import (
@@ -52,6 +56,7 @@ from .routes import (
     halt_router,
     mode_router,
     portfolio_router,
+    watchlist_router,
 )
 from .settings import GatewaySettings
 
@@ -77,7 +82,13 @@ async def default_lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
     broadcaster = Broadcaster(bus)
     await broadcaster.start()
 
-    alert_generator = PriceAlertGenerator(bus)
+    # Phase 5: watchlist — must start before feeds so the active instrument
+    # set is populated before FeedRouter subscribes to anything.
+    watchlist_store = SqliteWatchlistStore(conn)
+    watchlist_manager = WatchlistManager(bus, watchlist_store)
+    await watchlist_manager.start()
+
+    alert_generator = PriceAlertGenerator(bus, watchlist=watchlist_manager)
     await alert_generator.start()
 
     # Record every LLM response keyed by prompt hash — recorded responses
@@ -87,7 +98,7 @@ async def default_lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
         JsonFileLLMCache(llm_settings.cache_path),
         inner=create_provider(llm_settings),
     )
-    thesis_generator = ThesisGenerator(bus, provider)
+    thesis_generator = ThesisGenerator(bus, provider, watchlist=watchlist_manager)
     await thesis_generator.start()
 
     thesis_invalidator = ThesisInvalidator(bus)
@@ -117,7 +128,7 @@ async def default_lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
     executor = PaperExecutor(bus, portfolio, initial_mode=initial_mode)
     await executor.start()
 
-    decision_generator = DecisionGenerator(bus, provider)
+    decision_generator = DecisionGenerator(bus, provider, watchlist=watchlist_manager)
     await decision_generator.start()
 
     # Phase 4: outcome resolution + calibration.
@@ -158,8 +169,22 @@ async def default_lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
     await calibration_engine.start()
     await gate_tracker.start()
 
-    feed = KrakenFeed(bus)
-    feed_task = asyncio.create_task(feed.run(), name="kraken_feed")
+    # Phase 5: feeds — KrakenFeed starts with empty subscription;
+    # FeedRouter.start() subscribes the watchlist instruments.
+    kraken_feed = KrakenFeed(bus, settings=None)
+    # Clear static products so FeedRouter owns all subscriptions.
+    kraken_feed._active_instruments.clear()
+
+    equity_feed = EquityFeed(bus)
+
+    feed_router = FeedRouter(bus, watchlist_manager, kraken_feed, equity_feed)
+    await feed_router.start()
+
+    feed_task = asyncio.create_task(kraken_feed.run(), name="kraken_feed")
+    equity_task = asyncio.create_task(equity_feed.run(), name="equity_feed")
+
+    tick_pruner = TickPruner(store)
+    await tick_pruner.start()
 
     # Seed cross-restart dedup from the audit log so restarting doesn't
     # re-publish headlines already emitted as signals.
@@ -169,7 +194,7 @@ async def default_lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
         if e.source == "rss_news_feed"
         and (sid := e.payload.get("provenance", {}).get("source_id"))
     }
-    news_feed = NewsFeed(bus, initial_seen=seen_links)
+    news_feed = NewsFeed(bus, initial_seen=seen_links, watchlist=watchlist_manager)
     news_task = asyncio.create_task(news_feed.run(), name="news_feed")
 
     # Store on app.state so route handlers can access them.
@@ -183,19 +208,22 @@ async def default_lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
     app.state.decision_store = decision_store
     app.state.calibration_engine = calibration_engine
     app.state.gate_tracker = gate_tracker
+    app.state.watchlist_manager = watchlist_manager
 
     logger.info("gateway.ready")
     yield  # ← app serves requests here
 
     logger.info("gateway.shutting_down")
 
-    for task in (feed_task, news_task):
+    for task in (feed_task, equity_task, news_task):
         task.cancel()
         try:
             await task
         except asyncio.CancelledError:
             pass
 
+    await tick_pruner.stop()
+    await feed_router.stop()
     await gate_tracker.stop()
     await calibration_engine.stop()
     await resolver.stop()
@@ -206,6 +234,7 @@ async def default_lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
     await thesis_invalidator.stop()
     await thesis_generator.stop()
     await alert_generator.stop()
+    await watchlist_manager.stop()
     await broadcaster.stop()
     await bus.close()
     await conn.close()
@@ -248,6 +277,7 @@ def create_app(lifespan: Any = default_lifespan) -> FastAPI:
     app.include_router(halt_router)
     app.include_router(events_router)
     app.include_router(calibration_router)
+    app.include_router(watchlist_router)
     return app
 
 

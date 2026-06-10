@@ -28,6 +28,10 @@ from reasoning.llm.base import LLMProvider
 from .prompt import build_thesis_messages
 from .settings import ThesisSettings
 
+from typing import TYPE_CHECKING
+if TYPE_CHECKING:
+    from watchlist.manager import WatchlistManager
+
 logger = structlog.get_logger(__name__)
 
 _JSON_RE = re.compile(r"\{[\s\S]*\}", re.MULTILINE)
@@ -51,10 +55,12 @@ class ThesisGenerator:
         bus: Bus,
         provider: LLMProvider,
         settings: ThesisSettings | None = None,
+        watchlist: WatchlistManager | None = None,
     ) -> None:
         self._bus = bus
         self._provider = provider
         self._settings = settings or ThesisSettings()
+        self._watchlist = watchlist
         self._signal_sub: Subscription | None = None
         self._tick_sub: Subscription | None = None
 
@@ -93,6 +99,8 @@ class ThesisGenerator:
         now = envelope.ingest_time
 
         for instrument in instruments:
+            if self._watchlist is not None and instrument not in self._watchlist.active_instruments:
+                continue
             buf = self._buffers[instrument]
             buf.append((now, payload))
 

@@ -36,6 +36,9 @@ class EventStore(Protocol):
     async def append(self, envelope: EventEnvelope) -> None:
         """Durably write the event. Must be idempotent on duplicate id."""
 
+    async def prune(self, event_types: list[str], before: datetime) -> int:
+        """Delete events of the given types older than `before`. Returns count deleted."""
+
     async def close(self) -> None:
         """Release any held resources."""
 
@@ -77,6 +80,14 @@ class InMemoryEventStore:
             and (end is None or e.event_time <= end)
         ]
         return sorted(matching, key=lambda e: e.event_time)
+
+    async def prune(self, event_types: list[str], before: datetime) -> int:
+        before_count = len(self.events)
+        self.events = [
+            e for e in self.events
+            if not (e.event_type in event_types and e.event_time < before)
+        ]
+        return before_count - len(self.events)
 
     async def close(self) -> None:
         pass
@@ -231,6 +242,21 @@ class SqliteEventStore:
             )
             for row in rows
         ]
+
+    async def prune(self, event_types: list[str], before: datetime) -> int:
+        """Delete events older than `before` for the given types. Returns rows deleted."""
+        if not event_types:
+            return 0
+        placeholders = ", ".join("?" * len(event_types))
+        before_ts = before.astimezone(UTC).isoformat().replace("+00:00", "Z")
+        cursor = await self._conn.execute(
+            f"DELETE FROM events WHERE event_type IN ({placeholders}) AND event_time < ?",
+            (*event_types, before_ts),
+        )
+        await self._conn.commit()
+        deleted = cursor.rowcount
+        logger.info("event_store.pruned", event_types=event_types, deleted=deleted)
+        return deleted
 
     async def close(self) -> None:
         await self._conn.close()

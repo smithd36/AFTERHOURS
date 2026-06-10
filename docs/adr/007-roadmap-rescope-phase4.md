@@ -45,7 +45,19 @@ ADRs 001–006 predate this re-scope and are left unmodified. Where they referen
 
 One ADR-005 note becomes immediately relevant rather than deferred: Kraken v2 ticker items carry no venue timestamp (`event_time == ingest_time`), which matters for backtest point-in-time correctness. The Phase 4 plan (`docs/phase4-plan.md`) addresses it.
 
+## Superseding renumber — 2026-06-10
+
+A second roadmap re-scope (PLANNING v0.4) inserted a new Phase 5 (Watchlist & Multi-Instrument Scale) between the backtest phase and live trading. Phase numbers from this ADR now map as follows:
+
+| Reference in this ADR | Current phase |
+|---|---|
+| "Phase 5" (live trading) | **Phase 6** |
+| "Phase 6" (Scale & Autonomy) | **Phase 7** |
+| "Phase 7" (Harden & Extend) | **Phase 8** |
+
+All other content of this ADR remains accurate.
+
 ## When to revisit
 
-- At Phase 5 kickoff: commit the live execution venue (Coinbase Advanced Trade vs Kraken) and revisit ADR-003 key permissioning for trade scope.
+- At Phase 6 kickoff: commit the live execution venue (Coinbase Advanced Trade vs Kraken) and revisit ADR-003 key permissioning for trade scope.
 - If Coinbase public-feed auth requirements change again, re-evaluate the secondary-feed posture.

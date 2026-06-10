@@ -1,4 +1,4 @@
-import { useCallback, useReducer } from "react";
+import { useCallback, useEffect, useLayoutEffect, useReducer, useRef } from "react";
 import type { EventEnvelope } from "@/types/core";
 
 export interface EvidenceItem {
@@ -25,7 +25,8 @@ export interface DecisionRow {
 const MAX_DECISIONS = 50;
 
 type Action =
-  | { type: "decision.proposed" | "decision.approved" | "decision.rejected"; envelope: EventEnvelope };
+  | { type: "decision.proposed" | "decision.approved" | "decision.rejected"; envelope: EventEnvelope }
+  | { type: "refilter"; active: ReadonlySet<string> };
 
 function toRow(envelope: EventEnvelope, status: DecisionRow["status"]): DecisionRow | null {
   const p = envelope.payload;
@@ -49,6 +50,10 @@ function toRow(envelope: EventEnvelope, status: DecisionRow["status"]): Decision
 }
 
 function reducer(state: DecisionRow[], action: Action): DecisionRow[] {
+  if (action.type === "refilter") {
+    return state.filter((r) => !r.instrument || action.active.has(r.instrument));
+  }
+
   const p = action.envelope.payload;
   const id = String(p.id ?? "");
 
@@ -85,7 +90,6 @@ function reducer(state: DecisionRow[], action: Action): DecisionRow[] {
           : r,
       );
     }
-    // received approved/rejected without a prior proposed (reconnect)
     const row = toRow(action.envelope, newStatus);
     if (!row) return state;
     const next = [row, ...state];
@@ -95,19 +99,64 @@ function reducer(state: DecisionRow[], action: Action): DecisionRow[] {
   return state;
 }
 
-export function useDecisions(): {
+export function useDecisions(activeInstruments: ReadonlySet<string> | null): {
   decisions: DecisionRow[];
   handleEnvelope: (envelope: EventEnvelope) => void;
 } {
   const [decisions, dispatch] = useReducer(reducer, []);
 
+  const activeRef = useRef(activeInstruments);
+  useLayoutEffect(() => {
+    activeRef.current = activeInstruments;
+  });
+
+  useEffect(() => {
+    if (activeInstruments !== null) {
+      dispatch({ type: "refilter", active: activeInstruments });
+    }
+  }, [activeInstruments]);
+
   const handleEnvelope = useCallback((envelope: EventEnvelope) => {
+    const et = envelope.event_type;
+
     if (
-      envelope.event_type === "decision.proposed" ||
-      envelope.event_type === "decision.approved" ||
-      envelope.event_type === "decision.rejected"
+      et === "decision.proposed" ||
+      et === "decision.approved" ||
+      et === "decision.rejected"
     ) {
-      dispatch({ type: envelope.event_type as Action["type"], envelope });
+      const active = activeRef.current;
+      if (active !== null) {
+        const proposal = (envelope.payload.proposal as Record<string, unknown>) ?? {};
+        const instrument = String(proposal.instrument ?? "");
+        if (instrument && !active.has(instrument)) return;
+      }
+      dispatch({ type: et as Action["type"], envelope });
+      return;
+    }
+
+    if (et === "watchlist.instrument_added") {
+      const p = envelope.payload as Record<string, unknown>;
+      const instrument = String(p.instrument ?? "");
+      if (!instrument) return;
+      fetch(
+        "/api/events/recent?types=decision.proposed,decision.approved,decision.rejected&limit=200",
+      )
+        .then((r) => r.json())
+        .then((data: { events: EventEnvelope[] }) => {
+          for (const ev of data.events ?? []) {
+            const proposal = (ev.payload.proposal as Record<string, unknown>) ?? {};
+            if (String(proposal.instrument ?? "") !== instrument) continue;
+            const t = ev.event_type as Action["type"];
+            if (
+              t === "decision.proposed" ||
+              t === "decision.approved" ||
+              t === "decision.rejected"
+            ) {
+              dispatch({ type: t, envelope: ev });
+            }
+          }
+        })
+        .catch(() => {});
     }
   }, []);
 

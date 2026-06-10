@@ -214,7 +214,10 @@ export type EventType =
   | "system.feed_degraded"
   | "system.feed_dead"
   | "system.mode_changed"
-  | "system.error";
+  | "system.error"
+  // watchlist
+  | "watchlist.instrument_added"
+  | "watchlist.instrument_removed";
 
 export interface EventEnvelope<T = Record<string, unknown>> {
   id: string;

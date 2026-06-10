@@ -25,6 +25,11 @@ from core.schemas.signal import Signal, SignalType
 
 from .settings import AlertSettings
 
+# Imported lazily to avoid a circular dep at module level; type-check only.
+from typing import TYPE_CHECKING
+if TYPE_CHECKING:
+    from watchlist.manager import WatchlistManager
+
 logger = structlog.get_logger(__name__)
 
 # Minimum fraction of the window that must be covered before a pct_move fires.
@@ -35,9 +40,15 @@ _MIN_WINDOW_FILL = 0.8
 class PriceAlertGenerator:
     """Watches market.tick events and emits signal.created on price conditions."""
 
-    def __init__(self, bus: Bus, settings: AlertSettings | None = None) -> None:
+    def __init__(
+        self,
+        bus: Bus,
+        settings: AlertSettings | None = None,
+        watchlist: WatchlistManager | None = None,
+    ) -> None:
         self._bus = bus
         self._settings = settings or AlertSettings()
+        self._watchlist = watchlist
         self._sub: Subscription | None = None
 
         self._last_price: dict[str, Decimal] = {}
@@ -63,6 +74,8 @@ class PriceAlertGenerator:
         instrument: str = p.get("instrument", "")
         price_str: str = p.get("price", "")
         if not instrument or not price_str:
+            return
+        if self._watchlist is not None and instrument not in self._watchlist.active_instruments:
             return
 
         price = Decimal(price_str)

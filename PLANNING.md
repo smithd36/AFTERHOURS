@@ -1,6 +1,6 @@
 # AFTERHOURS — Architecture & Product Planning Document
 
-> **Status:** v0.3 — Phases 0–4 implemented (see README for current state); Phase 5+ pending. Roadmap re-scoped 2026-06-09 (ADR-007): Phase 4 is backtest + calibration (complete 2026-06-10); live trading is Phase 5; former Phases 5/6 are now 6/7.
+> **Status:** v0.5 — Phases 0–5 implemented (see README for current state); Phase 6+ pending. Roadmap re-scoped 2026-06-10: Phase 5 is dynamic watchlist + multi-instrument scale (instrument-agnostic feed routing, equity stub); former Phases 5/6/7 are now 6/7/8.
 > **Author:** Lead Architect
 > **Date:** 2026-06-09
 > **Audience:** Founder, engineering, future contributors
@@ -303,7 +303,7 @@ Panels (composable, draggable, keyboard-navigable — think tiling window manage
 
 ## 9. Phased Implementation Roadmap
 
-Each phase ends in something usable and de-risks the next. **No real money until Phase 5, and only after calibration evidence produced by Phase 4.**
+Each phase ends in something usable and de-risks the next. **No real money until Phase 6, and only after calibration evidence produced by Phase 4.**
 
 ### Phase 0 — Foundations (skeleton & contracts)
 - Repo, modular-monolith scaffold, the event bus, the **Decision Object + core schemas**, Postgres, config/secrets, structured logging, CI.
@@ -326,15 +326,24 @@ Each phase ends in something usable and de-risks the next. **No real money until
 - **Outcome resolution**: `OutcomeResolver` scores every shadow/paper decision against subsequent price action at its time horizon (`event_time` only) — emits `decision.resolved` with entry/resolution prices, side-adjusted return, and hit/miss. Rehydrates on restart; driven by tick `event_time`, not wall clock. **Backtesting engine**: `BacktestRunner` replays recorded source events (`market.tick`, `signal.created`) through the full pipeline on an isolated in-memory bus; point-in-time correct, no look-ahead; LLM calls served from a JSON cache (record first run with `--llm live`, replay free). CLI: `python -m backtest [--from DATE] [--to DATE] [--llm replay|live]` produces a JSON run artifact. **Calibration reporting**: `CalibrationEngine` maintains reliability buckets and ECE (overall + per-mode); `GateTracker` evaluates Appendix B criteria; both exposed via `GET /api/calibration` and `/api/calibration/gates`; `CalibrationPanel` shows headline ECE, reliability bars, and gate progress in the terminal. Implementation details: `docs/phase4-plan.md`.
 - *Exit:* strategies are backtestable with no look-ahead, and calibration is continuously measured and reported against the Appendix B gates. **Still no real money.**
 
-### Phase 5 — Live Trading (Assisted)
-- **Live broker/exchange adapter** for execution (venue re-confirmed at phase start — Coinbase Advanced Trade is the standing candidate; Kraken public endpoints remain the primary *market-data* source regardless, per ADR-007). Trade-scoped, withdrawal-disabled keys, hardened secrets, MFA console, continuous reconciliation against broker ground truth. **Assisted mode only**, micro position sizes, every order human-approved. Entry requires passing the Paper → Assisted gates of Appendix B, as measured by the Phase 4 calibration engine.
+### Phase 5 — Watchlist & Multi-Instrument Scale ✅ COMPLETE (2026-06-10)
+- **User-managed watchlist** (`watchlist` DB table, `WatchlistManager` service): operator adds/removes any instrument at runtime; emits `watchlist.instrument_added` / `watchlist.instrument_removed` onto the bus. REST API (`GET/POST /api/watchlist`, `DELETE /api/watchlist/{instrument}`) and a `WatchlistPanel` in the terminal UI (instrument search/filter + add/remove + per-instrument live feed-status indicator). Seed defaults (BTC-USD, ETH-USD) on first run.
+- **Instrument-agnostic feed routing** (`FeedRouter`): maps each instrument to its source adapter. `KrakenFeed` gains dynamic `subscribe(instrument)` / `unsubscribe(instrument)` on the live WS connection (no reconnect needed). New **`EquityFeed` stub**: REST polling adapter (Alpaca or Polygon.io free tier) for equity instruments, producing the same `market.tick` envelope. Both crypto and equity instruments are first-class watchlist entries from day one.
+- **Pipeline filtering**: `PriceAlertGenerator`, `ThesisGenerator`, and `DecisionGenerator` gate on the active watchlist — signals, theses, and decisions are scoped strictly to watched instruments, not all ticks on the bus.
+- **Tick retention / DB pruning**: configurable `TICK_RETENTION_DAYS`; a background task prunes old ticks to keep SQLite growth bounded regardless of watchlist size.
+- **Postgres-readiness**: `WatchlistStore` protocol alongside `EventStore` so the watchlist backend is independently swappable. All raw SQL confined to store implementations. Migrations use ANSI SQL (no SQLite-specific syntax). `core/db/` factory is the single SQLite/Postgres seam — adding a `PostgresEventStore` and `PostgresWatchlistStore` is an add, not a rewrite.
+- **Frontend watchlist sync**: all five panels (MarketWatch, SignalFeed, ThesisFeed, DecisionQueue, WatchlistPanel) react to `watchlist.*` bus events in real time — adding an instrument backfills historical signals/theses/decisions without a page reload; removing purges them immediately. Empty watchlist silences all feeds.
+- *Exit:* operator can watch any Kraken-listed crypto or any equity available on the stub adapter; the full pipeline (ingestion → signal → thesis → decision → calibration) reacts only to watched instruments; DB growth is bounded. **Still no real money.**
+
+### Phase 6 — Live Trading (Assisted)
+- **Live broker/exchange adapter** for execution (venue re-confirmed at phase start — Coinbase Advanced Trade is the standing candidate; Kraken public endpoints remain the primary *market-data* source regardless, per ADR-007). Trade-scoped, withdrawal-disabled keys, hardened secrets, MFA console, continuous reconciliation against broker ground truth. **Assisted mode only**, micro position sizes, every order human-approved. Entry requires passing the Paper → Assisted gates of Appendix B, as measured by the Phase 4 calibration engine. Phase 5 watchlist is a prerequisite — live trading must know which instruments are in scope.
 - *Exit:* small real trades execute correctly, reconcile against broker ground truth, and are fully audited. Graduate to Semi-autonomous *only* on demonstrated calibration (Appendix B gates).
 
-### Phase 6 — Scale & Autonomy
-- Add equities adapter (market hours, settlement, PDT rules), more venues, multi-instrument theses, Semi-autonomous → Supervised-autonomous modes with bounded envelopes, advanced risk (correlation/portfolio optimization), richer Strategy Lab, A/B of models.
+### Phase 7 — Scale & Autonomy
+- Full equities adapter (market hours, settlement, PDT rules), more venues, multi-instrument theses, Semi-autonomous → Supervised-autonomous modes with bounded envelopes, advanced risk (correlation/portfolio optimization), richer Strategy Lab, A/B of models. Postgres migration if SQLite becomes a bottleneck (the Phase 5 store protocols make this a targeted swap).
 - *Exit:* multi-market, partially autonomous, still gated and observable.
 
-### Phase 7 — Harden & Extend
+### Phase 8 — Harden & Extend
 - Performance, extraction of hot modules to services if needed, advanced observability, optional multi-account, disaster recovery, and the "additional features" of §10 as warranted.
 
 ---
@@ -366,7 +375,7 @@ Stated plainly, as requested:
 - **"Generating trade ideas" with an LLM is the easy 20%; *trusting and controlling* them is the hard, valuable 80%.** The investment center of gravity should be the risk engine, audit trail, and calibration — not the idea generator. Anyone can prompt a model to be bullish.
 - **Returns are the wrong early metric.** Optimizing P&L on small samples manufactures overfit, overconfident strategies that blow up. Optimize calibration and auditability first; returns follow from a trustworthy process.
 - **"Complete product, not a script" cuts both ways** — resist over-engineering into premature microservices. A disciplined modular monolith is the *more* professional choice for a single-operator product at this stage.
-- **Crypto before equities.** Despite equities being "more traditional," crypto's 24/7 markets, simpler/uniform APIs, no market-hours/settlement/PDT complexity, and tiny-size accessibility make it the right *first* live target. Equities are Phase 6.
+- **Crypto before equities.** Despite equities being "more traditional," crypto's 24/7 markets, simpler/uniform APIs, no market-hours/settlement/PDT complexity, and tiny-size accessibility make it the right *first* live target. A feed stub for equities lands in Phase 5 (watchlist); full equities (market hours, settlement, PDT) are Phase 7.
 - **The LLM must never compute the numbers it shouldn't.** Sizing, risk, and statistics are deterministic code. Architecturally enforce the separation of duties (§4.5) or you inherit hallucinated math with real money behind it.
 - **Regulatory posture is a design constraint, not a footnote.** Staying single-operator/own-capital is what keeps the project simple and legal; any move beyond that is a deliberate, counsel-reviewed decision (§6.5).
 
@@ -379,7 +388,7 @@ Stated plainly, as requested:
 | # | Decision | Status | Resolution (2026-06-09) |
 |---|---|---|---|
 | 1 | **Scope** — who uses it, whose capital | ✅ **LOCKED** | **Single-operator, own-capital.** Simplest regulatory posture; stays out of advisor/broker/custody territory. Any change is a deliberate, counsel-reviewed decision. |
-| 2 | **First market & venue** | ✅ **LOCKED** | **Crypto first; equities deferred to Phase 6.** **Re-confirmed 2026-06-09 (ADR-007): Kraken public WS endpoints remain the primary market-data source; Coinbase stays integrated as the secondary feed.** Live *execution* venue (Coinbase Advanced Trade is the standing candidate) is committed at the start of Phase 5 — Phases 0–4 need only the free realtime market-data feeds. |
+| 2 | **First market & venue** | ✅ **LOCKED** | **Crypto first; full equities deferred to Phase 7 (equity stub in Phase 5).** **Re-confirmed 2026-06-09 (ADR-007): Kraken public WS endpoints remain the primary market-data source; Coinbase stays integrated as the secondary feed.** Live *execution* venue (Coinbase Advanced Trade is the standing candidate) is committed at the start of Phase 6 — Phases 0–5 need only the free realtime market-data feeds. |
 | 3 | **Tech stack** | ✅ **LOCKED** | **Python core + TypeScript/React terminal + Postgres-centric storage (Timescale + pgvector) + event bus.** Per §4. |
 | 4 | **Data sources** (market-data + news vendors) | ✅ **LOCKED** | **Free-tier-first layered stack** (see Appendix A). Native exchange WS + CCXT for market data; CoinGecko/CryptoPanic/Finnhub free tiers + RSS for reference & news. Social sentiment flagged-off. Paid vendors deferred to Phase 6+. |
 | 5 | **Non-negotiables** | ✅ **LOCKED (binding)** | Deterministic risk engine as authoritative gatekeeper · Decision Object as central artifact · calibration as north star · kill switch from day one. Confirmed binding — no implementation may violate these. |
@@ -387,7 +396,7 @@ Stated plainly, as requested:
 
 ### Still open before Phase 0
 - **None blocking.** All six decisions are resolved. Phase 0 is fully unblocked.
-- *Deferred, non-blocking:* ~~re-confirm the Coinbase-vs-Kraken venue pick before Phase 4 (live execution)~~ **Resolved 2026-06-09 for market data** (Kraken primary, Coinbase secondary — ADR-007); the live *execution* venue is re-confirmed at the start of Phase 5.
+- *Deferred, non-blocking:* ~~re-confirm the Coinbase-vs-Kraken venue pick before Phase 4 (live execution)~~ **Resolved 2026-06-09 for market data** (Kraken primary, Coinbase secondary — ADR-007); the live *execution* venue is re-confirmed at the start of Phase 6.
 
 With #1–#3 locked, **Phase 0 can begin in parallel** with resolving #4–#6, since the scaffold, event bus, and Decision Object schema don't depend on the open items:
 
@@ -442,4 +451,4 @@ Keeping the safety rails full-strength is what makes the faster Balanced ramp ac
 
 ---
 
-*End of v0.3. All six §12 decisions are LOCKED. Phase 4 complete 2026-06-10. Revise as Phase exits reveal new constraints (and re-confirm the live execution venue before Phase 5 — market-data sourcing is settled: Kraken primary, Coinbase secondary).*
+*End of v0.4. All six §12 decisions are LOCKED. Phase 4 complete 2026-06-10. Revise as Phase exits reveal new constraints (and re-confirm the live execution venue before Phase 6 — market-data sourcing is settled: Kraken primary, Coinbase secondary).*

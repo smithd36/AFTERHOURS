@@ -107,6 +107,10 @@ class EventType(str, Enum):
     RISK_LIMIT_BREACHED = "risk.limit_breached"  # payload: {limit_type, current, limit}
     RISK_HALT = "risk.halt"  # payload: {reason, scope, actor}; kill switch fired
 
+    # --- Watchlist ---
+    WATCHLIST_INSTRUMENT_ADDED = "watchlist.instrument_added"  # payload: {instrument, market}
+    WATCHLIST_INSTRUMENT_REMOVED = "watchlist.instrument_removed"  # payload: {instrument, market}
+
     # --- System / observability ---
     SYSTEM_FEED_HEALTHY = "system.feed_healthy"  # payload: {feed_id, ts}
     SYSTEM_FEED_DEGRADED = "system.feed_degraded"  # payload: {feed_id, latency_ms, ts}

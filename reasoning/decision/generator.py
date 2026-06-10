@@ -31,6 +31,10 @@ from reasoning.thesis.generator import _extract_json
 from .prompt import build_decision_messages
 from .settings import DecisionSettings
 
+from typing import TYPE_CHECKING
+if TYPE_CHECKING:
+    from watchlist.manager import WatchlistManager
+
 logger = structlog.get_logger(__name__)
 
 
@@ -41,11 +45,13 @@ class DecisionGenerator:
         provider: LLMProvider,
         llm_settings: LLMSettings | None = None,
         settings: DecisionSettings | None = None,
+        watchlist: WatchlistManager | None = None,
     ) -> None:
         self._bus = bus
         self._provider = provider
         self._llm_settings = llm_settings or LLMSettings()
         self._settings = settings or DecisionSettings()
+        self._watchlist = watchlist
         self._thesis_sub: Subscription | None = None
         self._tick_sub: Subscription | None = None
 
@@ -85,6 +91,8 @@ class DecisionGenerator:
         if status not in ("active", ""):
             return
         if thesis_id in self._processed_thesis_ids:
+            return
+        if self._watchlist is not None and instrument not in self._watchlist.active_instruments:
             return
         self._processed_thesis_ids.add(thesis_id)
 

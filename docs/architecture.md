@@ -15,10 +15,20 @@ The shared kernel. No dependency on any subsystem.
 | `core/schemas/common.py` | `Instrument`, `Provenance`, `Money` — canonical domain types |
 | `core/schemas/signal.py` | `Signal` (provenance-tagged, payload marked untrusted), `Thesis` |
 | `core/schemas/decision.py` | `Decision` and all sub-objects — the central artifact |
-| `core/schemas/events.py` | `EventEnvelope`, `EventType` enum (31 topics), `AutonomyMode` |
+| `core/schemas/events.py` | `EventEnvelope`, `EventType` enum (33 topics incl. `watchlist.*`), `AutonomyMode` |
 | `core/bus/` | `Bus` ABC, `InProcessBus`, `EventStore` protocol, adapters |
 | `core/db/` | aiosqlite connection factory, migration runner |
 | `core/logging.py` | structlog with stdlib bridge, dev + JSON render modes |
+
+### `watchlist/`
+
+User-managed instrument registry. Postgres-ready via the `WatchlistStore` protocol pattern.
+
+| Module | Responsibility |
+|---|---|
+| `watchlist/store.py` | `WatchlistStore` protocol + `SqliteWatchlistStore` — `add(instrument, market)`, `remove(instrument)`, `list_active() -> list[WatchlistEntry]`. All raw SQL confined here; `PostgresWatchlistStore` is a future drop-in |
+| `watchlist/manager.py` | `WatchlistManager` — loads store on startup, seeds defaults on first run, exposes `active_instruments: frozenset[str]`, publishes `watchlist.instrument_added` / `watchlist.instrument_removed` onto the bus |
+| `watchlist/settings.py` | `WATCHLIST_DEFAULT_INSTRUMENTS` (comma-separated), `WATCHLIST_DEFAULT_MARKET` |
 
 ### `ingestion/`
 
@@ -26,15 +36,19 @@ Market data feeds and signal generators. Feeds run as long-lived async tasks; si
 
 | Module | Responsibility |
 |---|---|
-| `ingestion/kraken/feed.py` | **Primary feed.** Kraken WebSocket v2, no auth required, tenacity reconnect |
+| `ingestion/kraken/feed.py` | **Primary crypto feed.** Kraken WebSocket v2, no auth required, tenacity reconnect. Supports dynamic `subscribe(instrument)` / `unsubscribe(instrument)` at runtime — no reconnect needed (Kraken v2 WS supports channel management on live connections) |
 | `ingestion/kraken/normalizer.py` | Raw Kraken messages → `EventEnvelope(MARKET_TICK)`. Normalises `BTC/USD` → `BTC-USD`. |
-| `ingestion/kraken/settings.py` | `KRAKEN_WS_URL`, `KRAKEN_PRODUCTS` env config |
-| `ingestion/coinbase/feed.py` | **Secondary feed.** Coinbase Advanced Trade WebSocket (requires JWT auth — deferred to Phase 5) |
+| `ingestion/kraken/settings.py` | `KRAKEN_WS_URL`, `KRAKEN_PRODUCTS` env config (Phase 5: FeedRouter owns runtime subscriptions; static products list used only for testing) |
+| `ingestion/equity/feed.py` | **Equity stub feed.** REST polling (Alpaca Data API v2 or Polygon.io free tier) once per `EQUITY_POLL_INTERVAL_SECONDS`. Produces the same `market.tick` envelope as KrakenFeed. Runs in no-op mode when `EQUITY_FEED_API_KEY` is unset — subscriptions still tracked |
+| `ingestion/equity/settings.py` | `EQUITY_FEED_PROVIDER`, `EQUITY_FEED_API_KEY`, `EQUITY_FEED_API_SECRET`, `EQUITY_POLL_INTERVAL_SECONDS` |
+| `ingestion/router.py` | `FeedRouter` — subscribes to `watchlist.instrument_added/removed`; routes each instrument to `KrakenFeed` (crypto) or `EquityFeed` (equity); bootstraps by subscribing all currently active instruments on startup |
+| `ingestion/pruner.py` | `TickPruner` — background task; deletes `market.tick` events older than `TICK_RETENTION_DAYS` every `TICK_PRUNE_INTERVAL_HOURS`; keeps SQLite growth bounded for large watchlists |
+| `ingestion/coinbase/feed.py` | **Secondary feed.** Coinbase Advanced Trade WebSocket (requires JWT auth — deferred to Phase 6) |
 | `ingestion/coinbase/normalizer.py` | Raw Coinbase messages → `EventEnvelope(MARKET_TICK)` |
 | `ingestion/coinbase/settings.py` | `COINBASE_WS_URL`, `COINBASE_PRODUCTS`, `COINBASE_API_KEY` env config |
-| `ingestion/alerts/generator.py` | Subscribes to `market.tick`; emits `signal.created` for 24h crosses and short-window % moves |
+| `ingestion/alerts/generator.py` | Subscribes to `market.tick`; emits `signal.created` for 24h crosses and short-window % moves; watchlist-gated |
 | `ingestion/alerts/settings.py` | `ALERT_PRICE_MOVE_PCT_THRESHOLD`, `ALERT_COOLDOWN_MINUTES` env config |
-| `ingestion/news/feed.py` | Polls RSS feeds (CoinDesk, CoinTelegraph) every 5 min. Publishes current headlines on first-ever run; restarts dedupe against the event store |
+| `ingestion/news/feed.py` | Polls RSS feeds (CoinDesk, CoinTelegraph) every 5 min; watchlist-filtered (skips instruments not in active watchlist; general market news passes through when watchlist is non-empty; all suppressed when watchlist is empty) |
 | `ingestion/news/normalizer.py` | RSS entry → `EventEnvelope(SIGNAL_CREATED)` with keyword-based instrument extraction |
 | `ingestion/news/settings.py` | `NEWS_FEED_URLS`, `NEWS_POLL_INTERVAL_SECONDS` env config |
 
@@ -51,11 +65,11 @@ LLM thesis layer. Converts accumulated signals into structured trade theses via 
 | `reasoning/llm/providers/openai.py` | OpenAI via `openai` SDK |
 | `reasoning/llm/providers/ollama.py` | Local Ollama via `httpx` (no extra dep) |
 | `reasoning/llm/providers/openai_compatible.py` | Generic OpenAI-compatible: Groq, Mistral, OpenRouter |
-| `reasoning/thesis/generator.py` | Subscribes to `signal.created`; buffers per-instrument; calls LLM; emits `thesis.created` |
+| `reasoning/thesis/generator.py` | Subscribes to `signal.created`; buffers per-instrument; calls LLM; emits `thesis.created`; watchlist-gated |
 | `reasoning/thesis/invalidator.py` | Subscribes to `thesis.created`; emits `thesis.invalidated` when time horizon elapses |
 | `reasoning/thesis/prompt.py` | Prompt templates — system message + JSON schema instruction |
 | `reasoning/thesis/settings.py` | `ThesisSettings` — trigger threshold, window, cooldown, expiry, max tokens |
-| `reasoning/decision/generator.py` | Subscribes to `thesis.created`; calls LLM for a trade proposal; emits `decision.proposed` with `prompt_hash`, evidence, ModelInfo. `size_usd` is always `0` here — the risk engine sets it. |
+| `reasoning/decision/generator.py` | Subscribes to `thesis.created`; calls LLM for a trade proposal; emits `decision.proposed` with `prompt_hash`, evidence, ModelInfo. `size_usd` is always `0` here — the risk engine sets it. Watchlist-gated. |
 | `reasoning/decision/prompt.py` | Decision prompt templates |
 | `reasoning/decision/settings.py` | `DecisionSettings` — max tokens |
 
@@ -118,6 +132,7 @@ The FastAPI application. Exposes HTTP endpoints and the WebSocket feed. Manages 
 | `gateway/routes/halt.py` | `POST /api/halt` — kill switch; emits `risk.halt` and forces OBSERVE |
 | `gateway/routes/events.py` | `GET /api/events/recent` — recent events from the audit log for UI panel rehydration |
 | `gateway/routes/calibration.py` | `GET /api/calibration` (ECE + reliability), `GET /api/calibration/gates` (Appendix B readiness) |
+| `gateway/routes/watchlist.py` | `GET /api/watchlist`, `POST /api/watchlist` (add instrument), `DELETE /api/watchlist/{instrument}` (remove) |
 | `gateway/settings.py` | `HOST`, `PORT`, `CORS_ORIGINS` env config |
 
 ### `frontend/`
@@ -128,18 +143,20 @@ React terminal UI built with Vite, TypeScript, Tailwind CSS v4, and shadcn/ui (n
 |---|---|
 | `hooks/useEventStream.ts` | WS connection to `/ws`, exponential backoff reconnect |
 | `hooks/useBackfill.ts` | On mount, fetches `/api/events/recent` and replays history through the same reducers as live events |
-| `hooks/useMarketTicks.ts` | `useReducer`-backed tick map; dispatches on `market.tick` |
-| `hooks/useSignals.ts` | Accumulates last 50 `signal.created` events; deduplicates by id |
-| `hooks/useTheses.ts` | Accumulates last 20 `thesis.created`; updates status on `thesis.invalidated` |
-| `hooks/useDecisions.ts` | Decision rows keyed by id; status updated by `decision.approved`/`decision.rejected` |
+| `hooks/useMarketTicks.ts` | `useReducer`-backed tick map; dispatches on `market.tick`; purges instrument on `watchlist.instrument_removed` |
+| `hooks/useSignals.ts` | Accumulates last 50 `signal.created` events; deduplicates by id; watchlist-filtered — purges on removal, backfills on add, empty watchlist suppresses all signals |
+| `hooks/useTheses.ts` | Accumulates last 20 `thesis.created`; updates status on `thesis.invalidated`; watchlist-filtered with same add/remove sync as signals |
+| `hooks/useDecisions.ts` | Decision rows keyed by id; status updated by `decision.approved`/`decision.rejected`; watchlist-filtered with same add/remove sync |
 | `hooks/usePortfolio.ts` | Portfolio snapshot from `/api/portfolio` + `portfolio.position_updated` events |
 | `hooks/useCalibration.ts` | Calibration + gate reports from `/api/calibration*`, refetched (debounced) on `decision.resolved` / `risk.limit_breached` |
+| `hooks/useWatchlist.ts` | REST snapshot on mount + live updates from `watchlist.*` WS events; exposes `add`/`remove` mutations |
 | `components/panels/MarketWatch.tsx` | Live tick table with bullish/bearish price colouring |
 | `components/panels/SignalFeed.tsx` | Scrollable signal list; PRICE/NEWS badges; relative-age labels |
 | `components/panels/ThesisFeed.tsx` | Thesis cards; LONG/SHORT/NEUTRAL + ACTIVE/EXPIRED/INVALIDATED badges; invalidation conditions |
 | `components/panels/DecisionQueue.tsx` | Decision cards with risk verdict; EXECUTE/REJECT buttons in Assisted mode |
 | `components/panels/PortfolioPanel.tsx` | Cash, positions, unrealized P&L |
 | `components/panels/CalibrationPanel.tsx` | Headline ECE, reliability bars (hit rate vs stated confidence), Appendix B gate readiness |
+| `components/panels/WatchlistPanel.tsx` | Add/remove instruments at runtime; crypto/equity market selector; filter-as-you-type search (shown when >3 entries); per-instrument live feed-status dot (green = receiving ticks, dim = waiting) |
 | `components/layout/PanelShell.tsx` | Reusable terminal panel (header bar + content slot) |
 | `types/core.ts` | TypeScript mirror of `core/schemas/*.py` |
 
@@ -315,6 +332,7 @@ Full registry in `core/schemas/events.py` (`EventType` enum) and mirrored in `fr
 | `portfolio` | `position_updated`, `reconciled`, `reconciliation_failed` |
 | `risk` | `limit_approached`, `limit_breached`, `halt` |
 | `system` | `feed_healthy`, `feed_degraded`, `feed_dead`, `mode_changed`, `error` |
+| `watchlist` | `instrument_added`, `instrument_removed` |
 
 ### Subscription patterns
 
@@ -396,6 +414,6 @@ Only **source topics** are replayed (`market.tick`, `signal.created`). Derived e
 
 | Subsystem | Phase | Notes |
 |---|---|---|
-| Live exchange adapter | 5 | Assisted mode only, micro sizes; execution venue re-confirmed at phase start (ADR-007) |
-| Scale & autonomy | 6 | Equities, semi-auto mode, correlation risk, Strategy Lab |
-| Harden & extend | 7 | Performance, service extraction, advanced observability, disaster recovery |
+| Live exchange adapter | 6 | Assisted mode only, micro sizes; execution venue re-confirmed at phase start (ADR-007) |
+| Scale & autonomy | 7 | Full equities adapter, semi-auto mode, correlation risk, Strategy Lab; Postgres migration path via `EventStore` / `WatchlistStore` protocol swap |
+| Harden & extend | 8 | Performance, service extraction, advanced observability, disaster recovery |

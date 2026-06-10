@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import { cn } from "@/lib/utils";
 import { CalibrationPanel } from "@/components/panels/CalibrationPanel";
 import { DecisionQueue } from "@/components/panels/DecisionQueue";
@@ -6,6 +6,7 @@ import { MarketWatch } from "@/components/panels/MarketWatch";
 import { PortfolioPanel } from "@/components/panels/PortfolioPanel";
 import { SignalFeed } from "@/components/panels/SignalFeed";
 import { ThesisFeed } from "@/components/panels/ThesisFeed";
+import { WatchlistPanel } from "@/components/panels/WatchlistPanel";
 import { useBackfill } from "@/hooks/useBackfill";
 import { useCalibration } from "@/hooks/useCalibration";
 import { useDecisions } from "@/hooks/useDecisions";
@@ -14,6 +15,7 @@ import { useMarketTicks } from "@/hooks/useMarketTicks";
 import { usePortfolio } from "@/hooks/usePortfolio";
 import { useSignals } from "@/hooks/useSignals";
 import { useTheses } from "@/hooks/useTheses";
+import { useWatchlist } from "@/hooks/useWatchlist";
 import type { EventEnvelope } from "@/types/core";
 
 type AutonomyMode = "observe" | "paper" | "assisted";
@@ -126,11 +128,27 @@ export default function App() {
   }, []);
 
   const { ticks, handleEnvelope: handleTick } = useMarketTicks();
-  const { signals, handleEnvelope: handleSignal } = useSignals();
-  const { theses, handleEnvelope: handleThesis } = useTheses();
-  const { decisions, handleEnvelope: handleDecision } = useDecisions();
   const { snapshot } = usePortfolio();
   const { report, gates, handleEnvelope: handleCalibration } = useCalibration();
+  const {
+    entries: watchlistEntries,
+    loading: watchlistLoading,
+    add: watchlistAdd,
+    remove: watchlistRemove,
+    handleEnvelope: handleWatchlist,
+  } = useWatchlist();
+
+  const activeInstruments = useMemo(
+    () =>
+      watchlistLoading
+        ? null
+        : new Set(watchlistEntries.map((e) => e.instrument)),
+    [watchlistEntries, watchlistLoading],
+  );
+
+  const { signals, handleEnvelope: handleSignal } = useSignals(activeInstruments);
+  const { theses, handleEnvelope: handleThesis } = useTheses(activeInstruments);
+  const { decisions, handleEnvelope: handleDecision } = useDecisions(activeInstruments);
 
   const handleEnvelope = useCallback(
     (envelope: EventEnvelope) => {
@@ -139,8 +157,9 @@ export default function App() {
       handleThesis(envelope);
       handleDecision(envelope);
       handleCalibration(envelope);
+      handleWatchlist(envelope);
     },
-    [handleTick, handleSignal, handleThesis, handleDecision, handleCalibration],
+    [handleTick, handleSignal, handleThesis, handleDecision, handleCalibration, handleWatchlist],
   );
 
   const { connected } = useEventStream(handleEnvelope);
@@ -169,6 +188,13 @@ export default function App() {
             mode={mode}
             onExecute={handleExecute}
             onReject={handleReject}
+          />
+          <WatchlistPanel
+            entries={watchlistEntries}
+            loading={watchlistLoading}
+            ticks={ticks}
+            onAdd={watchlistAdd}
+            onRemove={watchlistRemove}
           />
           <PortfolioPanel snapshot={snapshot} />
           <CalibrationPanel report={report} gates={gates} />

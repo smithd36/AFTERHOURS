@@ -15,6 +15,7 @@ from __future__ import annotations
 
 import asyncio
 from collections.abc import Iterable
+from typing import TYPE_CHECKING
 
 import feedparser  # type: ignore[import-untyped]
 import httpx
@@ -24,6 +25,9 @@ from core.bus.base import Bus
 
 from .normalizer import NewsNormalizer
 from .settings import NewsFeedSettings
+
+if TYPE_CHECKING:
+    from watchlist.manager import WatchlistManager
 
 logger = structlog.get_logger(__name__)
 
@@ -39,11 +43,13 @@ class NewsFeed:
         settings: NewsFeedSettings | None = None,
         initial_seen: Iterable[str] | None = None,
         transport: httpx.AsyncBaseTransport | None = None,
+        watchlist: WatchlistManager | None = None,
     ) -> None:
         self._bus = bus
         self._settings = settings or NewsFeedSettings()
         self._normalizer = NewsNormalizer()
         self._transport = transport  # injectable for tests (httpx.MockTransport)
+        self._watchlist = watchlist
         # Ordered dict used as an ordered set: insertion order = arrival order.
         # Oldest entry is evicted when _SEEN_CAP is reached.
         self._seen: dict[str, None] = dict.fromkeys(initial_seen or ())
@@ -107,6 +113,15 @@ class NewsFeed:
             self._mark_seen(link)
             envelope = self._normalizer.normalize(entry)
             if envelope is not None:
+                # Skip signals whose instruments are all outside the watchlist.
+                # Signals with no instruments (general market news) always pass.
+                if self._watchlist is not None:
+                    active = self._watchlist.active_instruments
+                    if not active:
+                        continue
+                    instruments: list[str] = envelope.payload.get("instruments", [])
+                    if instruments and not any(i in active for i in instruments):
+                        continue
                 await self._bus.publish(envelope)
                 new_count += 1
 

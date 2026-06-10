@@ -1,4 +1,4 @@
-import { useCallback, useReducer } from "react";
+import { useCallback, useEffect, useLayoutEffect, useReducer, useRef } from "react";
 import type { EventEnvelope } from "@/types/core";
 
 export interface ThesisRow {
@@ -18,7 +18,8 @@ const MAX_THESES = 20;
 
 type Action =
   | { type: "thesis.created"; envelope: EventEnvelope }
-  | { type: "thesis.invalidated"; thesisId: string; reason: string };
+  | { type: "thesis.invalidated"; thesisId: string; reason: string }
+  | { type: "refilter"; active: ReadonlySet<string> };
 
 function toRow(envelope: EventEnvelope): ThesisRow | null {
   const p = envelope.payload;
@@ -52,25 +53,72 @@ function reducer(state: ThesisRow[], action: Action): ThesisRow[] {
         : r,
     );
   }
+  if (action.type === "refilter") {
+    return state.filter((r) => action.active.has(r.instrument));
+  }
   return state;
 }
 
-export function useTheses(): {
+export function useTheses(activeInstruments: ReadonlySet<string> | null): {
   theses: ThesisRow[];
   handleEnvelope: (envelope: EventEnvelope) => void;
 } {
   const [theses, dispatch] = useReducer(reducer, []);
 
+  const activeRef = useRef(activeInstruments);
+  useLayoutEffect(() => {
+    activeRef.current = activeInstruments;
+  });
+
+  useEffect(() => {
+    if (activeInstruments !== null) {
+      dispatch({ type: "refilter", active: activeInstruments });
+    }
+  }, [activeInstruments]);
+
   const handleEnvelope = useCallback((envelope: EventEnvelope) => {
     if (envelope.event_type === "thesis.created") {
+      const active = activeRef.current;
+      if (active !== null) {
+        const instrument = String(envelope.payload.instrument ?? "");
+        if (instrument && !active.has(instrument)) return;
+      }
       dispatch({ type: "thesis.created", envelope });
-    } else if (envelope.event_type === "thesis.invalidated") {
+      return;
+    }
+
+    if (envelope.event_type === "thesis.invalidated") {
       const p = envelope.payload;
       dispatch({
         type: "thesis.invalidated",
         thesisId: String(p.thesis_id ?? ""),
         reason: String(p.reason ?? ""),
       });
+      return;
+    }
+
+    if (envelope.event_type === "watchlist.instrument_added") {
+      const p = envelope.payload as Record<string, unknown>;
+      const instrument = String(p.instrument ?? "");
+      if (!instrument) return;
+      fetch("/api/events/recent?types=thesis.created,thesis.invalidated&limit=200")
+        .then((r) => r.json())
+        .then((data: { events: EventEnvelope[] }) => {
+          for (const ev of data.events ?? []) {
+            if (ev.event_type === "thesis.created") {
+              if (String(ev.payload.instrument ?? "") === instrument) {
+                dispatch({ type: "thesis.created", envelope: ev });
+              }
+            } else if (ev.event_type === "thesis.invalidated") {
+              dispatch({
+                type: "thesis.invalidated",
+                thesisId: String(ev.payload.thesis_id ?? ""),
+                reason: String(ev.payload.reason ?? ""),
+              });
+            }
+          }
+        })
+        .catch(() => {});
     }
   }, []);
 

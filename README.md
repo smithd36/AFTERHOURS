@@ -8,28 +8,33 @@ A modular monolith that connects live market data, LLM-generated trade theses, a
 
 ## Status
 
-**Phase 4 complete; Phase 5 (live trading) next.** Full decision pipeline live end-to-end, through paper execution, outcome scoring, ECE calibration, and event-time backtest replay:
+**Phase 5 complete; Phase 6 (live trading) next.** Full decision pipeline live end-to-end, with user-managed watchlist, dynamic feed routing across crypto and equity, watchlist-scoped pipeline filtering, and tick retention:
 
 ```
-Kraken WebSocket → InProcessBus → SQLiteEventStore → FastAPI /ws + /api → React terminal
-                                        ↑
-              PriceAlertGenerator (ticks → signal.created)
-              RSSNewsFeed         (CoinDesk / CoinTelegraph → signal.created)
-              ThesisGenerator     (signals → LLM → thesis.created)
-              ThesisInvalidator   (time horizon elapsed → thesis.invalidated)
-              DecisionGenerator   (theses → LLM → decision.proposed)
-              RiskEngine          (deterministic sizing/limits → decision.approved/rejected)
-              PaperExecutor       (simulated fills → order.filled)
-              Portfolio           (positions, cash, P&L → portfolio.position_updated)
-              OutcomeResolver     (prediction vs price at horizon → decision.resolved)
-              CalibrationEngine   (ECE + Appendix B gate tracking → /api/calibration)
-              GateTracker         (Observe → Paper promotion readiness → /api/calibration/gates)
-              BacktestRunner      (event-time replay → run artifact → calibration report)
+Kraken WebSocket ─┐
+EquityFeed (REST) ─┤─ FeedRouter ─── InProcessBus ── SQLiteEventStore ── FastAPI /ws + /api ── React terminal
+RSS News Feed    ─┘        ↑
+                     WatchlistManager (persist + seed defaults → watchlist.instrument_added/removed)
+                            │
+              PriceAlertGenerator  (ticks → signal.created, watchlist-filtered)
+              NewsFeed             (CoinDesk / CoinTelegraph → signal.created, watchlist-filtered)
+              ThesisGenerator      (signals → LLM → thesis.created, watchlist-filtered)
+              ThesisInvalidator    (time horizon elapsed → thesis.invalidated)
+              DecisionGenerator    (theses → LLM → decision.proposed, watchlist-filtered)
+              RiskEngine           (deterministic sizing/limits → decision.approved/rejected)
+              PaperExecutor        (simulated fills → order.filled)
+              Portfolio            (positions, cash, P&L → portfolio.position_updated)
+              OutcomeResolver      (prediction vs price at horizon → decision.resolved)
+              CalibrationEngine    (ECE + Appendix B gate tracking → /api/calibration)
+              GateTracker          (Observe → Paper promotion readiness → /api/calibration/gates)
+              BacktestRunner       (event-time replay → run artifact → calibration report)
+              TickPruner           (background task — bounds SQLite growth for large watchlists)
 ```
 
 Autonomy modes Observe / Paper / Assisted are operational with a kill-switch HALT,
-Decision Queue (operator approve/reject in Assisted mode), portfolio panel, and
-CalibrationPanel (headline ECE, reliability bars, gate progress).
+Decision Queue (operator approve/reject in Assisted mode), portfolio panel,
+CalibrationPanel (headline ECE, reliability bars, gate progress), and
+WatchlistPanel (add/remove instruments at runtime; live feed-status indicator per instrument).
 LLM provider is pluggable: Groq · Mistral · OpenRouter (free) or Anthropic · OpenAI · Ollama.
 Backtest CLI: `python -m backtest [--from DATE] [--to DATE] [--llm replay|live]`.
 
@@ -145,11 +150,16 @@ afterhours/
 │   ├── bus/                # InProcessBus, EventStore protocol, adapters
 │   └── db/                 # aiosqlite connection, migration runner
 │
+├── watchlist/              # Instrument watchlist — WatchlistManager, WatchlistStore protocol
+│
 ├── ingestion/              # Market data feeds and signal generators
-│   ├── kraken/             # Kraken WebSocket v2 (primary, no auth)
-│   ├── coinbase/           # Coinbase Advanced Trade (secondary; auth wiring in Phase 5)
+│   ├── kraken/             # Kraken WebSocket v2 (primary, no auth; dynamic subscribe/unsubscribe)
+│   ├── equity/             # EquityFeed stub — REST polling (Alpaca/Polygon free tier)
+│   ├── coinbase/           # Coinbase Advanced Trade (secondary; auth wiring in Phase 6)
 │   ├── alerts/             # PriceAlertGenerator — tick → signal.created
-│   └── news/               # RSS feed poller (CoinDesk, CoinTelegraph)
+│   ├── news/               # RSS feed poller (CoinDesk, CoinTelegraph)
+│   ├── router.py           # FeedRouter — maps watchlist add/remove to feed subscriptions
+│   └── pruner.py           # TickPruner — background task, bounds tick history growth
 │
 ├── reasoning/              # LLM layer
 │   ├── llm/                # LLMProvider ABC + Anthropic/OpenAI/Ollama/compatible providers
@@ -162,12 +172,12 @@ afterhours/
 ├── backtest/               # BacktestRunner, write_artifact, CLI (python -m backtest)
 │
 ├── gateway/                # FastAPI app — HTTP + WebSocket gateway
-│   └── routes/             # /api/mode, /api/decisions, /api/portfolio, /api/halt, /api/events, /api/calibration
+│   └── routes/             # /api/mode, /api/decisions, /api/portfolio, /api/halt, /api/events, /api/calibration, /api/watchlist
 │
 ├── frontend/               # React terminal UI
 │   └── src/
-│       ├── components/     # MarketWatch, SignalFeed, ThesisFeed, DecisionQueue, PortfolioPanel, CalibrationPanel
-│       ├── hooks/          # useEventStream, useBackfill, useSignals, useTheses, useDecisions, useCalibration, …
+│       ├── components/     # MarketWatch, SignalFeed, ThesisFeed, DecisionQueue, PortfolioPanel, CalibrationPanel, WatchlistPanel
+│       ├── hooks/          # useEventStream, useBackfill, useSignals, useTheses, useDecisions, useCalibration, useWatchlist, …
 │       └── types/          # TypeScript mirror of core/schemas
 │
 ├── tests/                  # pytest test suite
@@ -190,7 +200,7 @@ afterhours/
 
 **Autonomy is graduated.** Five modes — Observe → Paper → Assisted → Semi-auto → Supervised — with explicit promotion criteria and automatic demotion triggers. Kill switch available at all times.
 
-**Free data first.** All external data is behind adapters. Kraken WebSocket v2 (no API key needed) is the confirmed primary market-data source; Coinbase stays integrated as the secondary feed, with auth wiring landing alongside live trading in Phase 5 (ADR-007).
+**Free data first.** All external data is behind adapters. Kraken WebSocket v2 (no API key needed) is the confirmed primary crypto data source. Equity data uses Alpaca or Polygon free-tier REST polling (`EQUITY_FEED_API_KEY`); without a key the equity feed runs in no-op mode (watchlist management still works). Coinbase auth wiring lands in Phase 6 (ADR-007).
 
 See [`PLANNING.md`](PLANNING.md) for the full non-negotiables list.
 
@@ -205,9 +215,10 @@ See [`PLANNING.md`](PLANNING.md) for the full non-negotiables list.
 | **2** ✅ | Thesis | Pluggable LLM thesis generation, time-based invalidation, ThesisFeed panel |
 | **3** ✅ | Risk + Paper | Decision generator, risk engine, kill switch, paper execution, portfolio/ledger, Decision Queue UI |
 | **4** ✅ | Backtest + Calibration | Backtesting engine (event-time replay, no look-ahead), decision outcome resolution, ECE calibration reporting, autonomy gate tracking |
-| **5** | Live Trading | Live exchange adapter, Assisted-only real orders at micro size, broker reconciliation |
-| **6** | Scale + Autonomy | Equities, semi-auto mode, correlation risk, Strategy Lab |
-| **7** | Harden + Extend | Performance, service extraction, advanced observability, disaster recovery |
+| **5** ✅ | Watchlist & Multi-Instrument | User-managed watchlist, dynamic feed routing (crypto + equity stub), watchlist-scoped pipeline, tick retention, WatchlistPanel |
+| **6** | Live Trading | Live exchange adapter, Assisted-only real orders at micro size, broker reconciliation |
+| **7** | Scale + Autonomy | Full equities adapter, semi-auto mode, correlation risk, Strategy Lab, Postgres migration path |
+| **8** | Harden + Extend | Performance, service extraction, advanced observability, disaster recovery |
 
 ---
 
@@ -215,7 +226,7 @@ See [`PLANNING.md`](PLANNING.md) for the full non-negotiables list.
 
 **Read-only. Withdrawal-disabled. Never committed.**
 
-Real API keys go in `.env` (gitignored). The `.env.example` template contains no real values. Phases 0–4 use only public WebSocket endpoints — no exchange API key is needed until live trading in Phase 5.
+Real API keys go in `.env` (gitignored). The `.env.example` template contains no real values. Phases 0–5 use only public WebSocket/REST endpoints — no exchange API key is needed until live trading in Phase 6.
 
 See [`docs/adr/003-api-key-security.md`](docs/adr/003-api-key-security.md).
 

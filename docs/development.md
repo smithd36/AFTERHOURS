@@ -86,6 +86,9 @@ Open `http://localhost:5173`.
 | `POST /api/halt` | Kill switch — emits `risk.halt`, forces OBSERVE mode |
 | `GET /api/calibration` | ECE + reliability buckets, overall and per autonomy mode |
 | `GET /api/calibration/gates` | Appendix B graduation-gate readiness (criteria + deferred list) |
+| `GET /api/watchlist` | List active watchlist entries (`instrument`, `market`, `added_at`) |
+| `POST /api/watchlist` | Add instrument — body `{"instrument": "AAPL", "market": "equity"}` |
+| `DELETE /api/watchlist/{instrument}` | Remove instrument from watchlist |
 
 ---
 
@@ -160,7 +163,7 @@ rm afterhours.db afterhours.db-wal afterhours.db-shm 2>/dev/null; true
 | `GATEWAY_HOST` | `0.0.0.0` | Host to bind the FastAPI server |
 | `GATEWAY_PORT` | `8000` | Port to bind the FastAPI server |
 | `KRAKEN_PRODUCTS` | `["BTC-USD","ETH-USD"]` | Instruments to subscribe to (primary feed) |
-| `COINBASE_WS_URL` | `wss://advanced-trade-ws.coinbase.com/ws` | Coinbase public WS endpoint (secondary feed; Phase 5) |
+| `COINBASE_WS_URL` | `wss://advanced-trade-ws.coinbase.com/ws` | Coinbase public WS endpoint (secondary feed; Phase 6) |
 | `COINBASE_PRODUCTS` | `["BTC-USD","ETH-USD"]` | Product IDs to subscribe to |
 | `NEWS_FEED_URLS` | CoinDesk + CoinTelegraph | RSS feeds to poll |
 | `NEWS_POLL_INTERVAL_SECONDS` | `300` | RSS poll interval |
@@ -178,6 +181,14 @@ rm afterhours.db afterhours.db-wal afterhours.db-shm 2>/dev/null; true
 | `THESIS_SIGNAL_WINDOW_MINUTES` | `15` | Window the trigger count must fall within |
 | `RISK_*` | see `risk/settings.py` | Position/loss limits, stop-loss distance |
 | `PORTFOLIO_*` | see `portfolio/settings.py` | Initial cash, simulated slippage and fees |
+| `WATCHLIST_DEFAULT_INSTRUMENTS` | `BTC-USD,ETH-USD` | Comma-separated instruments seeded on first run |
+| `WATCHLIST_DEFAULT_MARKET` | `crypto` | Market for seeded instruments (`crypto` or `equity`) |
+| `EQUITY_FEED_PROVIDER` | `alpaca` | REST polling provider (`alpaca` or `polygon`) |
+| `EQUITY_FEED_API_KEY` | *(unset)* | API key for equity feed; unset = no-op mode |
+| `EQUITY_FEED_API_SECRET` | *(unset)* | API secret (Alpaca only) |
+| `EQUITY_POLL_INTERVAL_SECONDS` | `60` | How often to poll each equity instrument |
+| `TICK_RETENTION_DAYS` | `30` | `market.tick` events older than this are pruned |
+| `TICK_PRUNE_INTERVAL_HOURS` | `24` | How often `TickPruner` runs |
 
 Variables are loaded from `.env` by pydantic-settings. All settings classes use `env_prefix` matching their module (e.g., `COINBASE_*` for `CoinbaseFeedSettings`). `.env.example` documents every variable.
 
@@ -244,6 +255,7 @@ afterhours/
 ├── portfolio/      # depends on core
 ├── calibration/    # depends on core
 ├── backtest/       # depends on calibration, portfolio, reasoning, risk
+├── watchlist/      # depends on core
 ├── gateway/        # depends on all of the above
 └── tests/          # tests for all packages
 ```

@@ -4,6 +4,7 @@ from .events import router as events_router
 from .halt import router as halt_router
 from .mode import router as mode_router
 from .portfolio import router as portfolio_router
+from .watchlist import router as watchlist_router
 
 __all__ = [
     "calibration_router",
@@ -12,4 +13,5 @@ __all__ = [
     "halt_router",
     "mode_router",
     "portfolio_router",
+    "watchlist_router",
 ]

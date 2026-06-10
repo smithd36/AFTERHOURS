@@ -1,4 +1,4 @@
-import { useCallback, useReducer } from "react";
+import { useCallback, useEffect, useLayoutEffect, useReducer, useRef } from "react";
 import type { EventEnvelope } from "@/types/core";
 
 export interface SignalRow {
@@ -25,6 +25,10 @@ interface SignalPayload {
   };
 }
 
+type Action =
+  | { type: "add"; envelope: EventEnvelope }
+  | { type: "refilter"; active: ReadonlySet<string> };
+
 function toRow(envelope: EventEnvelope, receivedAt: number): SignalRow | null {
   const sp = envelope.payload as unknown as SignalPayload;
   if (!sp?.id || !sp?.type) return null;
@@ -44,26 +48,86 @@ function toRow(envelope: EventEnvelope, receivedAt: number): SignalRow | null {
   };
 }
 
-type State = SignalRow[];
-
-function reducer(state: State, envelope: EventEnvelope): State {
-  const row = toRow(envelope, Date.now());
-  if (!row) return state;
-  // Deduplicate by signal id
-  if (state.some((r) => r.id === row.id)) return state;
-  const next = [row, ...state];
-  return next.length > MAX_SIGNALS ? next.slice(0, MAX_SIGNALS) : next;
+function isRelevant(row: SignalRow, active: ReadonlySet<string>): boolean {
+  if (active.size === 0) return false;
+  // General-market signals (no specific instruments) pass through when the
+  // watchlist is non-empty — they provide macro context for watched assets.
+  if (row.instruments.length === 0) return true;
+  return row.instruments.some((i) => active.has(i));
 }
 
-export function useSignals(): {
+function reducer(state: SignalRow[], action: Action): SignalRow[] {
+  if (action.type === "add") {
+    const row = toRow(action.envelope, Date.now());
+    if (!row) return state;
+    if (state.some((r) => r.id === row.id)) return state;
+    const next = [row, ...state];
+    return next.length > MAX_SIGNALS ? next.slice(0, MAX_SIGNALS) : next;
+  }
+  if (action.type === "refilter") {
+    return state.filter((r) => isRelevant(r, action.active));
+  }
+  return state;
+}
+
+/**
+ * activeInstruments: null while the watchlist is loading (no filter applied).
+ * Once loaded, only signals for watched instruments (or general news) are shown;
+ * existing signals for removed instruments are purged immediately.
+ */
+export function useSignals(activeInstruments: ReadonlySet<string> | null): {
   signals: SignalRow[];
   handleEnvelope: (envelope: EventEnvelope) => void;
 } {
   const [signals, dispatch] = useReducer(reducer, []);
 
+  // Keep a ref in sync so handleEnvelope always sees the latest value without
+  // being recreated on every render.
+  const activeRef = useRef(activeInstruments);
+  useLayoutEffect(() => {
+    activeRef.current = activeInstruments;
+  });
+
+  // When activeInstruments transitions from null→Set, or when the set changes
+  // (instrument added/removed), refilter existing state.
+  useEffect(() => {
+    if (activeInstruments !== null) {
+      dispatch({ type: "refilter", active: activeInstruments });
+    }
+  }, [activeInstruments]);
+
   const handleEnvelope = useCallback((envelope: EventEnvelope) => {
     if (envelope.event_type === "signal.created") {
-      dispatch(envelope);
+      // Filter incoming signals against the current watchlist (if loaded).
+      const active = activeRef.current;
+      if (active !== null) {
+        if (active.size === 0) return;
+        const sp = envelope.payload as unknown as SignalPayload;
+        const instruments = sp?.instruments ?? [];
+        if (instruments.length > 0 && !instruments.some((i) => active.has(i))) {
+          return;
+        }
+      }
+      dispatch({ type: "add", envelope });
+      return;
+    }
+
+    if (envelope.event_type === "watchlist.instrument_added") {
+      const p = envelope.payload as Record<string, unknown>;
+      const instrument = String(p.instrument ?? "");
+      if (!instrument) return;
+      // Backfill recent signals from the store for the newly watched instrument.
+      fetch("/api/events/recent?types=signal.created&limit=200")
+        .then((r) => r.json())
+        .then((data: { events: EventEnvelope[] }) => {
+          for (const ev of data.events ?? []) {
+            const sp = ev.payload as unknown as SignalPayload;
+            if ((sp?.instruments ?? []).includes(instrument)) {
+              dispatch({ type: "add", envelope: ev });
+            }
+          }
+        })
+        .catch(() => {});
     }
   }, []);
 
