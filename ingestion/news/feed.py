@@ -33,6 +33,18 @@ logger = structlog.get_logger(__name__)
 
 _SEEN_CAP = 5_000  # evict oldest when the dedup set exceeds this
 
+# Several publishers gate RSS on the User-Agent: with the default
+# "python-httpx/x.y" UA, Yahoo returns 429 and Nasdaq/Benzinga tarpit the
+# connection until it times out (surfacing as news_feed.fetch_failed). A
+# browser-like UA gets a normal 200 + feed body from all of them.
+_HEADERS = {
+    "User-Agent": (
+        "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 "
+        "(KHTML, like Gecko) Chrome/124.0 Safari/537.36"
+    ),
+    "Accept": "application/rss+xml, application/atom+xml, application/xml;q=0.9, */*;q=0.8",
+}
+
 
 class NewsFeed:
     """Polls RSS feeds and publishes signal.created for each new headline."""
@@ -79,7 +91,10 @@ class NewsFeed:
         # redirect; httpx does not follow redirects by default and a 3xx body
         # parses as an empty feed without ever raising.
         async with httpx.AsyncClient(
-            timeout=15.0, follow_redirects=True, transport=self._transport
+            timeout=15.0,
+            follow_redirects=True,
+            headers=_HEADERS,
+            transport=self._transport,
         ) as client:
             for url in self._settings.feed_urls:
                 try:
