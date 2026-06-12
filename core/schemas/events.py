@@ -136,3 +136,21 @@ class AutonomyMode(str, Enum):
     ASSISTED = "assisted"  # every order requires explicit operator approval
     SEMI_AUTO = "semi_auto"  # executes within a pre-approved bounded envelope
     SUPERVISED = "supervised"  # broader limits; operator monitors and can halt
+
+    @property
+    def level(self) -> int:
+        """Rung on the autonomy ladder; higher means more execution authority.
+
+        Use `mode.level >= AutonomyMode.ASSISTED.level` to gate actions that
+        require operator-or-greater authority (e.g. executing a parked order).
+        """
+        return _MODE_LADDER.index(self)
+
+
+_MODE_LADDER: tuple[AutonomyMode, ...] = (
+    AutonomyMode.OBSERVE,
+    AutonomyMode.PAPER,
+    AutonomyMode.ASSISTED,
+    AutonomyMode.SEMI_AUTO,
+    AutonomyMode.SUPERVISED,
+)

@@ -46,6 +46,7 @@ class RiskEngine:
         self._proposed_sub: Subscription | None = None
         self._tick_sub: Subscription | None = None
         self._mode_sub: Subscription | None = None
+        self._halt_sub: Subscription | None = None
 
     async def start(self) -> None:
         self._proposed_sub = await self._bus.subscribe(
@@ -57,15 +58,20 @@ class RiskEngine:
         self._mode_sub = await self._bus.subscribe(
             EventType.SYSTEM_MODE_CHANGED, self._handle_mode_change
         )
+        # React to the kill switch directly, not only via its mode-change side effect.
+        self._halt_sub = await self._bus.subscribe(
+            EventType.RISK_HALT, self._handle_halt
+        )
         logger.info("risk_engine.started", mode=self._mode.value)
 
     async def stop(self) -> None:
-        for sub in (self._proposed_sub, self._tick_sub, self._mode_sub):
+        for sub in (self._proposed_sub, self._tick_sub, self._mode_sub, self._halt_sub):
             if sub is not None:
                 await self._bus.unsubscribe(sub)
         self._proposed_sub = None
         self._tick_sub = None
         self._mode_sub = None
+        self._halt_sub = None
         logger.info("risk_engine.stopped")
 
     # ------------------------------------------------------------------
@@ -76,6 +82,12 @@ class RiskEngine:
         new_mode = AutonomyMode(envelope.payload.get("to_mode", self._mode.value))
         logger.info("risk_engine.mode_changed", from_mode=self._mode.value, to_mode=new_mode.value)
         self._mode = new_mode
+
+    async def _handle_halt(self, envelope: EventEnvelope) -> None:
+        # Kill switch: force OBSERVE so all subsequent proposals are rejected,
+        # regardless of the halt's mode-change event ordering.
+        logger.warning("risk_engine.halted", reason=envelope.payload.get("reason"))
+        self._mode = AutonomyMode.OBSERVE
 
     # ------------------------------------------------------------------
     # Pre-trade checks

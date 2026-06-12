@@ -26,6 +26,10 @@ from .settings import PortfolioSettings
 logger = structlog.get_logger(__name__)
 
 
+class HaltedError(RuntimeError):
+    """Raised when execution is attempted below ASSISTED authority (e.g. after a halt)."""
+
+
 class PaperExecutor:
     def __init__(
         self,
@@ -41,6 +45,7 @@ class PaperExecutor:
         self._approved_sub: Subscription | None = None
         self._stop_sub: Subscription | None = None
         self._mode_sub: Subscription | None = None
+        self._halt_sub: Subscription | None = None
 
         # ASSISTED mode: approved decisions pending human execution
         self._pending: dict[str, dict] = {}
@@ -55,15 +60,21 @@ class PaperExecutor:
         self._mode_sub = await self._bus.subscribe(
             EventType.SYSTEM_MODE_CHANGED, self._handle_mode_change
         )
+        # Subscribe to the kill switch directly so the pending queue is flushed
+        # even if the halt's mode-change side effect is missed or reordered.
+        self._halt_sub = await self._bus.subscribe(
+            EventType.RISK_HALT, self._handle_halt
+        )
         logger.info("paper_executor.started", mode=self._mode.value)
 
     async def stop(self) -> None:
-        for sub in (self._approved_sub, self._stop_sub, self._mode_sub):
+        for sub in (self._approved_sub, self._stop_sub, self._mode_sub, self._halt_sub):
             if sub is not None:
                 await self._bus.unsubscribe(sub)
         self._approved_sub = None
         self._stop_sub = None
         self._mode_sub = None
+        self._halt_sub = None
         logger.info("paper_executor.stopped")
 
     # ------------------------------------------------------------------
@@ -71,7 +82,20 @@ class PaperExecutor:
     # ------------------------------------------------------------------
 
     async def execute(self, decision_id: str) -> bool:
-        """Operator approves a pending decision in ASSISTED mode."""
+        """Operator approves a pending decision in ASSISTED mode.
+
+        Refuses unless the current mode carries ASSISTED-or-greater authority.
+        A halt (or any demotion below ASSISTED) both flips the mode and clears
+        the queue, so this guard is the kill switch's last line of defence
+        against filling a parked order.
+        """
+        if self._mode.level < AutonomyMode.ASSISTED.level:
+            logger.warning(
+                "paper_executor.execute_refused", decision_id=decision_id, mode=self._mode.value
+            )
+            raise HaltedError(
+                f"execution requires ASSISTED authority or higher; mode is {self._mode.value}"
+            )
         payload = self._pending.pop(decision_id, None)
         if payload is None:
             return False
@@ -131,6 +155,33 @@ class PaperExecutor:
 
     async def _handle_mode_change(self, envelope: EventEnvelope) -> None:
         self._mode = AutonomyMode(envelope.payload.get("to_mode", self._mode.value))
+        # Any demotion below ASSISTED strips execution authority; parked
+        # decisions are no longer actionable, so expire them.
+        if self._mode.level < AutonomyMode.ASSISTED.level:
+            await self._expire_pending("mode_changed", envelope.event_time)
+
+    async def _handle_halt(self, envelope: EventEnvelope) -> None:
+        # Kill switch: drop authority and flush the queue immediately, independent
+        # of the mode-change event that the halt also publishes.
+        self._mode = AutonomyMode.OBSERVE
+        await self._expire_pending(envelope.payload.get("reason", "halt"), envelope.event_time)
+
+    async def _expire_pending(self, reason: str, now: datetime) -> None:
+        """Clear all parked decisions, emitting an audited decision.expired each."""
+        if not self._pending:
+            return
+        expired = list(self._pending.items())
+        self._pending.clear()
+        for decision_id, _payload in expired:
+            await self._bus.publish(EventEnvelope(
+                event_type=EventType.DECISION_EXPIRED,
+                source="paper_executor",
+                event_time=now,
+                ingest_time=datetime.now(UTC),
+                correlation_id=UUID(decision_id) if decision_id else None,
+                payload={"decision_id": decision_id, "reason": reason},
+            ))
+            logger.info("paper_executor.expired", decision_id=decision_id, reason=reason)
 
     async def _handle_approved(self, envelope: EventEnvelope) -> None:
         if self._mode == AutonomyMode.OBSERVE:
