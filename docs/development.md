@@ -35,7 +35,7 @@ pip install -e ".[dev]"
 cp .env.example .env
 ```
 
-The defaults in `.env.example` work for local development. Coinbase public WebSocket data requires no API key.
+The defaults in `.env.example` work for local development. The primary crypto feed (Kraken WebSocket v2) requires no API key, so Phases 0–5 run with no secrets. The optional equity stub feed activates only when `EQUITY_FEED_API_KEY` is set (Alpaca/Polygon free tier); without it the equity feed runs in no-op mode.
 
 If you are configuring private API access (future phases), add keys to `.env` only — never commit them. Keys must be **read-only** and **withdrawal-disabled**. See [`docs/adr/003-api-key-security.md`](adr/003-api-key-security.md).
 
@@ -107,7 +107,7 @@ pytest tests/ingestion/coinbase/
 pytest tests/gateway/
 ```
 
-Tests run without network access — all external dependencies (Coinbase WS, DB) are replaced by fakes or in-memory adapters in the test fixtures.
+Tests run without network access — all external dependencies (Kraken/Coinbase WS, equity REST, RSS, DB) are replaced by fakes or in-memory adapters in the test fixtures.
 
 Key fixtures:
 - `InMemoryEventStore` — event store backed by a list; exposes `.events` for assertions
@@ -162,6 +162,7 @@ rm afterhours.db afterhours.db-wal afterhours.db-shm 2>/dev/null; true
 | `DB_PATH` | `afterhours.db` | SQLite database file path |
 | `GATEWAY_HOST` | `0.0.0.0` | Host to bind the FastAPI server |
 | `GATEWAY_PORT` | `8000` | Port to bind the FastAPI server |
+| `WS_CLIENT_QUEUE_SIZE` | `512` | Per-client outbound WebSocket buffer; a slow client drops its own oldest messages rather than stalling the bus |
 | `KRAKEN_PRODUCTS` | `["BTC-USD","ETH-USD"]` | Instruments to subscribe to (primary feed) |
 | `COINBASE_WS_URL` | `wss://advanced-trade-ws.coinbase.com/ws` | Coinbase public WS endpoint (secondary feed; Phase 6) |
 | `COINBASE_PRODUCTS` | `["BTC-USD","ETH-USD"]` | Product IDs to subscribe to |
@@ -181,6 +182,7 @@ rm afterhours.db afterhours.db-wal afterhours.db-shm 2>/dev/null; true
 | `THESIS_SIGNAL_WINDOW_MINUTES` | `15` | Window the trigger count must fall within |
 | `RISK_*` | see `risk/settings.py` | Position/loss limits, stop-loss distance |
 | `PORTFOLIO_*` | see `portfolio/settings.py` | Initial cash, simulated slippage and fees |
+| `PORTFOLIO_PENDING_TTL_SECONDS` | `3600` | How long an ASSISTED-mode parked decision stays executable before auto-expiring |
 | `WATCHLIST_DEFAULT_INSTRUMENTS` | `BTC-USD,ETH-USD` | Comma-separated instruments seeded on first run |
 | `WATCHLIST_DEFAULT_MARKET` | `crypto` | Market for seeded instruments (`crypto` or `equity`) |
 | `EQUITY_FEED_PROVIDER` | `alpaca` | REST polling provider (`alpaca` or `polygon`) |

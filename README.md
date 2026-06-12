@@ -38,6 +38,14 @@ WatchlistPanel (add/remove instruments at runtime; live feed-status indicator pe
 LLM provider is pluggable: Groq · Mistral · OpenRouter (free) or Anthropic · OpenAI · Ollama.
 Backtest CLI: `python -m backtest [--from DATE] [--to DATE] [--llm replay|live]`.
 
+**Pre-Phase-6 hardening (in progress):** the paper system is being hardened to live-trading
+standards before any real order — a single `ModeController` owns the autonomy mode, the kill
+switch expires pending decisions, the portfolio and decision store rehydrate from the event log
+on restart, ledger accounting is corrected (entry-fee P&L, short equity, daily-loss rollover,
+affordability), decision→order→fill carries a deterministic client order ID, prices quantize
+magnitude-aware (sub-cent safe), and LLM output is schema-validated before publish. Tracked in
+[`docs/pre-phase-6-issues.md`](docs/pre-phase-6-issues.md) (review: `docs/pre-phase6-review.md`).
+
 ---
 
 ## Quick Start
@@ -148,7 +156,9 @@ afterhours/
 ├── core/                   # Shared domain — schemas, event bus, DB
 │   ├── schemas/            # Pydantic models: events, signals, decisions
 │   ├── bus/                # InProcessBus, EventStore protocol, adapters
-│   └── db/                 # aiosqlite connection, migration runner
+│   ├── db/                 # aiosqlite connection, migration runner
+│   ├── mode.py             # ModeController — single source of truth for autonomy mode
+│   └── pricing.py          # quantize_price — magnitude-aware (sub-cent safe) rounding
 │
 ├── watchlist/              # Instrument watchlist — WatchlistManager, WatchlistStore protocol
 │

@@ -9,7 +9,8 @@ It is deliberately text-first. The UI is still moving; screenshots would be
 stale within a phase. They'll be added once the terminal layout freezes ahead
 of live trading (Phase 6).
 
-> **Scope:** Phases 0–5 are complete; Phase is beginning soon. The only modes you
+> **Scope:** Phases 0–5 are complete; pre-Phase-6 hardening is in progress and Phase 6 (live
+> trading) is next. The only modes you
 > can run right now are **Observe**, **Paper**, and **Assisted**, and all fills
 > are simulated. There is **no live trading** — no real order ever reaches a
 > venue. Semi-auto, Supervised, and the live execution adapter are Phase 6 and
@@ -256,12 +257,14 @@ any open positions manually if you want a flat book.
 So you don't go looking for them:
 
 - **Live trading.** No real orders. All fills are simulated. API keys are
-  read-only / withdrawal-disabled and Phases 0–4 use only public endpoints.
+  read-only / withdrawal-disabled and Phases 0–5 use only public endpoints.
 - **Semi-auto and Supervised modes.** Defined in the model but not operable from
   the terminal. They add bounded autonomous execution and broader limits — both
   meaningful only once live execution exists.
-- **The backtest harness.** Outcome resolution and calibration are live; the
-  backtest harness itself is not yet (see `docs/phase4-plan.md`).
+
+Outcome resolution, calibration reporting, and the backtest harness itself are all
+live (Phase 4): replay a recorded event range with `python -m backtest` — see the
+"Running a Backtest" section of `docs/development.md`.
 
 When live trading lands, the order flow is already designed to share the same
 `Order` structure and client-order-id idempotency, so going live is an additive

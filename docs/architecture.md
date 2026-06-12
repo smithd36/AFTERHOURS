@@ -15,9 +15,11 @@ The shared kernel. No dependency on any subsystem.
 | `core/schemas/common.py` | `Instrument`, `Provenance`, `Money` — canonical domain types |
 | `core/schemas/signal.py` | `Signal` (provenance-tagged, payload marked untrusted), `Thesis` |
 | `core/schemas/decision.py` | `Decision` and all sub-objects — the central artifact |
-| `core/schemas/events.py` | `EventEnvelope`, `EventType` enum (33 topics incl. `watchlist.*`), `AutonomyMode` |
+| `core/schemas/events.py` | `EventEnvelope`, `EventType` enum (34 topics incl. `watchlist.*`), `AutonomyMode` |
 | `core/bus/` | `Bus` ABC, `InProcessBus`, `EventStore` protocol, adapters |
 | `core/db/` | aiosqlite connection factory, migration runner |
+| `core/mode.py` | `ModeController` — single source of truth for the autonomy mode. Every subsystem reads `current` at point of use instead of caching its own copy (was previously cached in four places), so a dropped/reordered `system.mode_changed` event can't leave subsystems in disagreement. `set()` validates transitions; `halt()` is the kill switch (forces OBSERVE, bypasses validation). Mode is deliberately not persisted — every restart begins in OBSERVE (ADR-004) |
+| `core/pricing.py` | `quantize_price()` — rounds to a fixed number of significant figures so the effective tick scales with price. A single hard-coded cent quantum would collapse sub-cent instruments (SHIB/PEPE) to `0.00`; significant-figure rounding never sends a non-zero price to zero |
 | `core/logging.py` | structlog with stdlib bridge, dev + JSON render modes |
 
 ### `watchlist/`
@@ -90,7 +92,7 @@ The deterministic gatekeeper. Every `decision.proposed` passes through here befo
 
 | Module | Responsibility |
 |---|---|
-| `risk/engine.py` | Pre-trade checks (mode, position limits, daily-loss circuit breaker), deterministic sizing, stop price; emits `decision.approved`/`decision.rejected`. Watches ticks for stop-loss breaches → `risk.limit_breached` |
+| `risk/engine.py` | Pre-trade checks (mode via `ModeController`, position limits, no-pyramiding, daily-loss circuit breaker keyed on UTC-day rollover, affordability vs available cash), deterministic sizing, mandatory stop price (a proposal with no computable stop is rejected `no_stop_price` rather than opening an unprotected position); emits `decision.approved`/`decision.rejected`. Watches ticks for stop-loss breaches → `risk.limit_breached`. `evaluate()` is injected into the executor so parked ASSISTED decisions are re-validated at execute time |
 | `risk/sizing.py` | `deterministic_size()` — position size from portfolio value + loss limits |
 | `risk/settings.py` | `RISK_MAX_POSITION_PCT`, `RISK_MAX_TRADE_LOSS_PCT`, `RISK_STOP_LOSS_PCT`, `RISK_MAX_OPEN_POSITIONS`, `RISK_MAX_DAILY_LOSS_PCT` |
 
@@ -102,9 +104,9 @@ Paper trading ledger and execution.
 
 | Module | Responsibility |
 |---|---|
-| `portfolio/ledger.py` | `Portfolio` — positions, cash, realized/unrealized P&L marked against live ticks; emits `portfolio.position_updated` |
-| `portfolio/executor.py` | `PaperExecutor` — simulated fills with slippage + fees. PAPER mode auto-fills `decision.approved`; ASSISTED mode parks decisions until the operator executes/rejects via the API. Closes positions on `risk.limit_breached` |
-| `portfolio/models.py` | Position and snapshot models |
+| `portfolio/ledger.py` | `Portfolio` — positions, cash, realized/unrealized P&L marked against live ticks; emits `portfolio.position_updated`. Realized P&L factors in **both** entry and exit fees (entry fee stored on `Position` at open); short positions contribute `margin + unrealized_pnl` to equity (not raw market value); `rehydrate()` replays `order.filled` history on startup so a restart restores cash/positions instead of resetting to `initial_cash` |
+| `portfolio/executor.py` | `PaperExecutor` — simulated fills with slippage + fees. PAPER mode auto-fills `decision.approved`; ASSISTED mode parks decisions (TTL `PORTFOLIO_PENDING_TTL_SECONDS`, default 1h) until the operator executes/rejects via the API; on TTL expiry, demotion, or halt, parked decisions are flushed with audited `decision.expired` events. Public `reject(decision_id, reason)` emits an audited `decision.rejected`. Each order carries a deterministic `client_order_id` (`<decision_id>:open|close`) so a re-delivered approval or re-fired stop can't double-fill. Closes positions on `risk.limit_breached` |
+| `portfolio/models.py` | `Position` (with stored `entry_fee`), `Order` (with `client_order_id`), and snapshot models |
 | `portfolio/settings.py` | `PORTFOLIO_INITIAL_CASH`, `PORTFOLIO_SLIPPAGE_PCT`, `PORTFOLIO_FEE_PCT` |
 
 ### `calibration/`
@@ -125,11 +127,11 @@ The FastAPI application. Exposes HTTP endpoints and the WebSocket feed. Manages 
 | Module | Responsibility |
 |---|---|
 | `gateway/app.py` | `create_app()` factory, `default_lifespan`, health/status/WS routes |
-| `gateway/broadcaster.py` | `Broadcaster` — subscribes to bus, fans out to WS clients |
-| `gateway/routes/mode.py` | `GET/POST /api/mode` — autonomy mode with validated transitions |
+| `gateway/broadcaster.py` | `Broadcaster` — subscribes to bus, fans out to WS clients. Each client has its own bounded outbound queue (`WS_CLIENT_QUEUE_SIZE`) drained by a dedicated writer task; a slow client drops its own oldest messages rather than back-pressuring the bus (and thus the Kraken dispatch loop / risk tick path). `total_dropped` is surfaced on `GET /api/status` |
+| `gateway/routes/mode.py` | `GET/POST /api/mode` — reads/sets the shared `ModeController`; transitions validated by the controller (single source of truth, updated before the audit event is published) |
 | `gateway/routes/decisions.py` | `GET /api/decisions`, `GET /api/decisions/pending`, `POST /api/decisions/{id}/execute|reject` (Assisted-mode operator actions) |
 | `gateway/routes/portfolio.py` | `GET /api/portfolio`, `POST /api/portfolio/positions/{instrument}/close` |
-| `gateway/routes/halt.py` | `POST /api/halt` — kill switch; emits `risk.halt` and forces OBSERVE |
+| `gateway/routes/halt.py` | `POST /api/halt` — kill switch; calls `ModeController.halt()` (forces OBSERVE, emits `risk.halt`), which flushes the executor's pending queue with audited `decision.expired` events |
 | `gateway/routes/events.py` | `GET /api/events/recent` — recent events from the audit log for UI panel rehydration |
 | `gateway/routes/calibration.py` | `GET /api/calibration` (ECE + reliability), `GET /api/calibration/gates` (Appendix B readiness) |
 | `gateway/routes/watchlist.py` | `GET /api/watchlist`, `POST /api/watchlist` (add instrument), `DELETE /api/watchlist/{instrument}` (remove) |

@@ -43,7 +43,7 @@ ADRs 001–006 predate this re-scope and are left unmodified. Where they referen
 | "Phase 4+ (execution, backtesting)" (ADR-005) | backtesting: Phase 4 · execution: Phase 5 |
 | "Phase 5" (regime detection, paid vendors, equities) | Phase 6 |
 
-One ADR-005 note becomes immediately relevant rather than deferred: Kraken v2 ticker items carry no venue timestamp (`event_time == ingest_time`), which matters for backtest point-in-time correctness. The Phase 4 plan (`docs/phase4-plan.md`) addresses it.
+One ADR-005 note becomes immediately relevant rather than deferred: Kraken v2 ticker items carry no venue timestamp (`event_time == ingest_time`), which matters for backtest point-in-time correctness. The delivered Phase 4 implementation addresses it — see the Backtest replay section of `docs/architecture.md`. *(This originally pointed to a planned `docs/phase4-plan.md`; that plan was folded into `PLANNING.md` §9 Phase 4 and `docs/architecture.md` rather than landing as a separate file.)*
 
 ## Superseding renumber — 2026-06-10
 
