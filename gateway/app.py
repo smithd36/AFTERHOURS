@@ -125,7 +125,11 @@ async def default_lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
     risk_engine = RiskEngine(bus, portfolio, initial_mode=initial_mode)
     await risk_engine.start()
 
-    executor = PaperExecutor(bus, portfolio, initial_mode=initial_mode)
+    # Inject the risk engine's pre-trade evaluation so a parked ASSISTED
+    # decision is re-validated (and its size/stop recomputed) at execute time.
+    executor = PaperExecutor(
+        bus, portfolio, initial_mode=initial_mode, validator=risk_engine.evaluate
+    )
     await executor.start()
 
     decision_generator = DecisionGenerator(bus, provider, watchlist=watchlist_manager)

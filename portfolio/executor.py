@@ -10,8 +10,11 @@ ASSISTED mode: parks approved decisions; waits for explicit execute(id) call
 
 from __future__ import annotations
 
-from datetime import UTC, datetime
+from collections.abc import Callable
+from dataclasses import dataclass
+from datetime import UTC, datetime, timedelta
 from decimal import Decimal
+from typing import Any
 from uuid import UUID, uuid4
 
 import structlog
@@ -25,9 +28,30 @@ from .settings import PortfolioSettings
 
 logger = structlog.get_logger(__name__)
 
+# Re-validates a parked decision against current state at execution time.
+# Returns (approved, refreshed_payload, rejection_reasons). Structurally the
+# RiskEngine.evaluate signature — injected (not imported) to keep portfolio
+# free of a dependency on risk/.
+PretradeValidator = Callable[[dict[str, Any], datetime], tuple[bool, dict[str, Any], list[str]]]
+
 
 class HaltedError(RuntimeError):
     """Raised when execution is attempted below ASSISTED authority (e.g. after a halt)."""
+
+
+class StaleDecisionError(RuntimeError):
+    """Raised when a parked decision is expired or fails re-validation at execute time."""
+
+
+@dataclass
+class _ParkedDecision:
+    """An ASSISTED-mode approval awaiting operator execution.
+
+    `approved_at` is the approval's event clock, used to enforce the TTL on the
+    same timeline the rest of the financial logic uses (two-clock rule)."""
+
+    approved_at: datetime
+    payload: dict[str, Any]
 
 
 class PaperExecutor:
@@ -37,18 +61,23 @@ class PaperExecutor:
         portfolio: Portfolio,
         initial_mode: AutonomyMode = AutonomyMode.OBSERVE,
         settings: PortfolioSettings | None = None,
+        validator: PretradeValidator | None = None,
     ) -> None:
         self._bus = bus
         self._portfolio = portfolio
         self._mode = initial_mode
         self._settings = settings or PortfolioSettings()
+        # Re-runs pre-trade checks + recomputes size/stop when a parked decision
+        # is executed. When None, execute() fills the parked payload as-is.
+        self._validator = validator
         self._approved_sub: Subscription | None = None
         self._stop_sub: Subscription | None = None
         self._mode_sub: Subscription | None = None
         self._halt_sub: Subscription | None = None
+        self._tick_sub: Subscription | None = None
 
         # ASSISTED mode: approved decisions pending human execution
-        self._pending: dict[str, dict] = {}
+        self._pending: dict[str, _ParkedDecision] = {}
 
     async def start(self) -> None:
         self._approved_sub = await self._bus.subscribe(
@@ -65,16 +94,26 @@ class PaperExecutor:
         self._halt_sub = await self._bus.subscribe(
             EventType.RISK_HALT, self._handle_halt
         )
+        # Ticks drive the TTL sweep on the event clock (no wall-clock timer), so
+        # parked decisions expire deterministically in live and in replay.
+        self._tick_sub = await self._bus.subscribe(
+            EventType.MARKET_TICK, self._handle_tick
+        )
         logger.info("paper_executor.started", mode=self._mode.value)
 
     async def stop(self) -> None:
-        for sub in (self._approved_sub, self._stop_sub, self._mode_sub, self._halt_sub):
+        # Don't silently drop parked decisions on shutdown/restart — expire them
+        # with an audited event so the queue is never lost without a trace.
+        await self._expire_pending("shutdown", datetime.now(UTC))
+        for sub in (self._approved_sub, self._stop_sub, self._mode_sub,
+                    self._halt_sub, self._tick_sub):
             if sub is not None:
                 await self._bus.unsubscribe(sub)
         self._approved_sub = None
         self._stop_sub = None
         self._mode_sub = None
         self._halt_sub = None
+        self._tick_sub = None
         logger.info("paper_executor.stopped")
 
     # ------------------------------------------------------------------
@@ -96,10 +135,33 @@ class PaperExecutor:
             raise HaltedError(
                 f"execution requires ASSISTED authority or higher; mode is {self._mode.value}"
             )
-        payload = self._pending.pop(decision_id, None)
-        if payload is None:
+        parked = self._pending.pop(decision_id, None)
+        if parked is None:
             return False
-        await self._fill(payload, datetime.now(UTC))
+
+        now = datetime.now(UTC)
+
+        # TTL: a parked approval that has aged out is stale — its checks and stop
+        # no longer reflect the market. Expire it instead of filling.
+        if self._is_expired(parked, now):
+            await self._emit_expired(decision_id, "ttl_expired", now)
+            raise StaleDecisionError(f"decision {decision_id} expired before execution")
+
+        # Re-run all pre-trade checks against current state and recompute the
+        # size/stop from the current price. A decision approved hours ago must
+        # not fill on stale assumptions (position now held, daily loss tripped,
+        # price moved through the old stop, …).
+        payload = parked.payload
+        if self._validator is not None:
+            approved, refreshed, reasons = self._validator(payload, now)
+            if not approved:
+                await self._emit_expired(decision_id, f"revalidation_failed: {reasons}", now)
+                raise StaleDecisionError(
+                    f"decision {decision_id} failed re-validation: {reasons}"
+                )
+            payload = refreshed
+
+        await self._fill(payload, now)
         return True
 
     async def close_position(self, instrument: str, now: datetime | None = None) -> bool:
@@ -146,8 +208,8 @@ class PaperExecutor:
         return True
 
     @property
-    def pending_decisions(self) -> list[dict]:
-        return list(self._pending.values())
+    def pending_decisions(self) -> list[dict[str, Any]]:
+        return [parked.payload for parked in self._pending.values()]
 
     # ------------------------------------------------------------------
     # Bus handlers
@@ -166,22 +228,42 @@ class PaperExecutor:
         self._mode = AutonomyMode.OBSERVE
         await self._expire_pending(envelope.payload.get("reason", "halt"), envelope.event_time)
 
+    async def _handle_tick(self, envelope: EventEnvelope) -> None:
+        # Drive the TTL sweep on the event clock so parked decisions expire even
+        # when the operator never returns to act on them.
+        if self._pending:
+            await self._sweep_expired(envelope.event_time)
+
+    def _is_expired(self, parked: _ParkedDecision, now: datetime) -> bool:
+        ttl = timedelta(seconds=self._settings.pending_ttl_seconds)
+        return now - parked.approved_at >= ttl
+
+    async def _sweep_expired(self, now: datetime) -> None:
+        """Expire every parked decision whose TTL has elapsed as of `now`."""
+        stale = [did for did, parked in self._pending.items() if self._is_expired(parked, now)]
+        for decision_id in stale:
+            self._pending.pop(decision_id, None)
+            await self._emit_expired(decision_id, "ttl_expired", now)
+
     async def _expire_pending(self, reason: str, now: datetime) -> None:
         """Clear all parked decisions, emitting an audited decision.expired each."""
         if not self._pending:
             return
-        expired = list(self._pending.items())
+        decision_ids = list(self._pending.keys())
         self._pending.clear()
-        for decision_id, _payload in expired:
-            await self._bus.publish(EventEnvelope(
-                event_type=EventType.DECISION_EXPIRED,
-                source="paper_executor",
-                event_time=now,
-                ingest_time=datetime.now(UTC),
-                correlation_id=UUID(decision_id) if decision_id else None,
-                payload={"decision_id": decision_id, "reason": reason},
-            ))
-            logger.info("paper_executor.expired", decision_id=decision_id, reason=reason)
+        for decision_id in decision_ids:
+            await self._emit_expired(decision_id, reason, now)
+
+    async def _emit_expired(self, decision_id: str, reason: str, now: datetime) -> None:
+        await self._bus.publish(EventEnvelope(
+            event_type=EventType.DECISION_EXPIRED,
+            source="paper_executor",
+            event_time=now,
+            ingest_time=datetime.now(UTC),
+            correlation_id=UUID(decision_id) if decision_id else None,
+            payload={"decision_id": decision_id, "reason": reason},
+        ))
+        logger.info("paper_executor.expired", decision_id=decision_id, reason=reason)
 
     async def _handle_approved(self, envelope: EventEnvelope) -> None:
         if self._mode == AutonomyMode.OBSERVE:
@@ -191,7 +273,9 @@ class PaperExecutor:
         elif self._mode == AutonomyMode.ASSISTED:
             decision_id = str(envelope.payload.get("id", ""))
             if decision_id:
-                self._pending[decision_id] = envelope.payload
+                self._pending[decision_id] = _ParkedDecision(
+                    approved_at=envelope.event_time, payload=envelope.payload
+                )
                 logger.info("paper_executor.parked", decision_id=decision_id)
 
     async def _handle_stop(self, envelope: EventEnvelope) -> None:

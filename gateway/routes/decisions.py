@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from fastapi import APIRouter, HTTPException, Request
 
-from portfolio.executor import HaltedError
+from portfolio.executor import HaltedError, StaleDecisionError
 
 router = APIRouter(prefix="/api/decisions", tags=["decisions"])
 
@@ -26,7 +26,7 @@ async def execute_decision(decision_id: str, request: Request) -> dict:
     executor = request.app.state.executor
     try:
         ok = await executor.execute(decision_id)
-    except HaltedError as exc:
+    except (HaltedError, StaleDecisionError) as exc:
         raise HTTPException(status_code=409, detail=str(exc)) from exc
     if not ok:
         raise HTTPException(status_code=404, detail="Decision not found in pending queue")

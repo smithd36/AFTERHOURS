@@ -2,16 +2,18 @@
 
 from __future__ import annotations
 
-from datetime import UTC, datetime
+from datetime import UTC, datetime, timedelta
 from decimal import Decimal
+from typing import Any
 from uuid import uuid4
 
 import pytest
 
 from core.bus import InMemoryEventStore, InProcessBus
 from core.schemas.events import AutonomyMode, EventEnvelope, EventType
-from portfolio.executor import HaltedError, PaperExecutor
+from portfolio.executor import HaltedError, PaperExecutor, StaleDecisionError
 from portfolio.ledger import Portfolio
+from portfolio.settings import PortfolioSettings
 
 
 def _halt(reason: str = "operator_halt") -> EventEnvelope:
@@ -46,21 +48,25 @@ async def portfolio(bus: InProcessBus) -> Portfolio:
     return p
 
 
-def _tick(instrument: str, price: str) -> EventEnvelope:
+def _tick(
+    instrument: str, price: str, event_time: datetime | None = None
+) -> EventEnvelope:
     return EventEnvelope(
         event_type=EventType.MARKET_TICK,
         source="test",
-        event_time=datetime.now(UTC),
+        event_time=event_time or datetime.now(UTC),
         ingest_time=datetime.now(UTC),
         payload={"instrument": instrument, "price": price, "volume": "1"},
     )
 
 
-def _approved(instrument: str = "BTC-USD", size_usd: str = "500") -> EventEnvelope:
+def _approved(
+    instrument: str = "BTC-USD", size_usd: str = "500", event_time: datetime | None = None
+) -> EventEnvelope:
     return EventEnvelope(
         event_type=EventType.DECISION_APPROVED,
         source="test",
-        event_time=datetime.now(UTC),
+        event_time=event_time or datetime.now(UTC),
         ingest_time=datetime.now(UTC),
         payload={
             "id": str(uuid4()),
@@ -189,3 +195,113 @@ async def test_execute_refused_in_observe(
         await executor.execute("does-not-matter")
 
     await executor.stop()
+
+
+async def test_pending_decision_expires_after_ttl(
+    bus: InProcessBus, portfolio: Portfolio
+) -> None:
+    """A parked decision past its TTL is swept (event-clock driven) and audited."""
+    settings = PortfolioSettings(pending_ttl_seconds=60)
+    executor = PaperExecutor(
+        bus, portfolio, initial_mode=AutonomyMode.ASSISTED, settings=settings
+    )
+    await executor.start()
+
+    expired: list[EventEnvelope] = []
+    await bus.subscribe(EventType.DECISION_EXPIRED, lambda e: expired.append(e))
+
+    base = datetime(2026, 1, 1, 12, 0, tzinfo=UTC)
+    env = _approved("BTC-USD", "500", event_time=base)
+    decision_id = env.payload["id"]
+    await bus.publish(env)
+    assert len(executor.pending_decisions) == 1
+
+    # A tick 61s later (> 60s TTL) drives the sweep on the event clock.
+    await bus.publish(_tick("BTC-USD", "50000", event_time=base + timedelta(seconds=61)))
+
+    assert len(executor.pending_decisions) == 0
+    assert len(expired) == 1
+    assert expired[0].payload["decision_id"] == decision_id
+    assert expired[0].payload["reason"] == "ttl_expired"
+
+    await executor.stop()
+
+
+async def test_execute_revalidates_and_refreshes_stop(
+    bus: InProcessBus, portfolio: Portfolio
+) -> None:
+    """execute() fills the re-validated payload (fresh stop), not the stale parked one."""
+    def validator(payload: dict[str, Any], now: datetime) -> tuple[bool, dict[str, Any], list[str]]:
+        # Approve, but with a freshly computed stop the parked payload never had.
+        refreshed = dict(payload)
+        refreshed["risk"] = {**payload.get("risk", {}), "stop_price": "49000"}
+        return (True, refreshed, [])
+
+    executor = PaperExecutor(
+        bus, portfolio, initial_mode=AutonomyMode.ASSISTED, validator=validator
+    )
+    await executor.start()
+
+    await bus.publish(_tick("BTC-USD", "50000"))
+    fills: list[EventEnvelope] = []
+    await bus.subscribe(EventType.ORDER_FILLED, lambda e: fills.append(e))
+
+    env = _approved("BTC-USD", "500")  # parked payload has stop_price=None
+    decision_id = env.payload["id"]
+    await bus.publish(env)
+
+    assert await executor.execute(decision_id) is True
+    assert len(fills) == 1
+    assert fills[0].payload["stop_price"] == "49000"  # recomputed, not the stale None
+
+    await executor.stop()
+
+
+async def test_execute_expires_on_failed_revalidation(
+    bus: InProcessBus, portfolio: Portfolio
+) -> None:
+    """If re-validation fails at execute time, nothing fills and the decision expires."""
+    def validator(payload: dict[str, Any], now: datetime) -> tuple[bool, dict[str, Any], list[str]]:
+        return (False, {}, ["position_exists: already holding BTC-USD"])
+
+    executor = PaperExecutor(
+        bus, portfolio, initial_mode=AutonomyMode.ASSISTED, validator=validator
+    )
+    await executor.start()
+
+    fills: list[EventEnvelope] = []
+    expired: list[EventEnvelope] = []
+    await bus.subscribe(EventType.ORDER_FILLED, lambda e: fills.append(e))
+    await bus.subscribe(EventType.DECISION_EXPIRED, lambda e: expired.append(e))
+
+    env = _approved("BTC-USD", "500")
+    decision_id = env.payload["id"]
+    await bus.publish(env)
+
+    with pytest.raises(StaleDecisionError):
+        await executor.execute(decision_id)
+
+    assert len(fills) == 0
+    assert len(expired) == 1
+    assert "revalidation_failed" in expired[0].payload["reason"]
+
+    await executor.stop()
+
+
+async def test_shutdown_expires_pending(
+    bus: InProcessBus, portfolio: Portfolio
+) -> None:
+    """Restart/shutdown must not silently drop the queue — it emits decision.expired."""
+    executor = PaperExecutor(bus, portfolio, initial_mode=AutonomyMode.ASSISTED)
+    await executor.start()
+
+    expired: list[EventEnvelope] = []
+    await bus.subscribe(EventType.DECISION_EXPIRED, lambda e: expired.append(e))
+
+    await bus.publish(_approved("BTC-USD", "500"))
+    assert len(executor.pending_decisions) == 1
+
+    await executor.stop()  # simulates graceful restart
+
+    assert len(expired) == 1
+    assert expired[0].payload["reason"] == "shutdown"

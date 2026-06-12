@@ -17,3 +17,8 @@ class PortfolioSettings(BaseSettings):
     initial_cash: Decimal = Decimal("10000.00")
     slippage_pct: float = 0.001   # 0.1% market-order slippage
     fee_pct: float = 0.001        # 0.1% per fill
+
+    # ASSISTED-mode parked decisions expire this many seconds after approval.
+    # On expiry an audited decision.expired event is emitted and the decision
+    # can no longer be executed (it would be re-validated against stale state).
+    pending_ttl_seconds: int = 3600   # 1 hour

@@ -16,6 +16,7 @@ from __future__ import annotations
 
 from datetime import UTC, datetime
 from decimal import Decimal
+from typing import Any
 from uuid import UUID
 
 import structlog
@@ -101,34 +102,58 @@ class RiskEngine:
         # lifecycle stays on one timeline in live and in backtest replay.
         now = envelope.event_time
 
+        approved, approved_payload, reasons = self.evaluate(payload, now)
+        if not approved:
+            await self._reject(decision_id, instrument, now, payload, reasons)
+            return
+
+        await self._bus.publish(EventEnvelope(
+            event_type=EventType.DECISION_APPROVED,
+            source="risk_engine",
+            event_time=now,
+            ingest_time=datetime.now(UTC),
+            correlation_id=UUID(decision_id) if decision_id else None,
+            payload=approved_payload,
+        ))
+        logger.info("risk_engine.approved", decision_id=decision_id,
+                    instrument=instrument,
+                    size_usd=approved_payload["proposal"]["size_usd"])
+
+    def evaluate(
+        self, payload: dict[str, Any], now: datetime
+    ) -> tuple[bool, dict[str, Any], list[str]]:
+        """Run every pre-trade check + deterministic sizing/stop against the
+        *current* portfolio and price state. Pure (no events published) so it can
+        be reused to re-validate a parked ASSISTED decision at execution time.
+
+        Returns ``(approved, approved_payload, reasons)``: on approval the payload
+        carries a freshly recomputed ``size_usd`` and stop price; on rejection it
+        is empty and ``reasons`` explains why.
+        """
+        instrument: str = str(payload.get("proposal", {}).get("instrument", ""))
+
         # Observe mode: shadow decision, no execution
         if self._mode == AutonomyMode.OBSERVE:
-            await self._reject(decision_id, instrument, now, payload,
-                               ["observe_mode: shadow decision logged for calibration"])
-            return
+            return (False, {}, ["observe_mode: shadow decision logged for calibration"])
 
         portfolio_value = self._portfolio.total_value
 
         # Max open positions
         if self._portfolio.open_position_count >= self._settings.max_open_positions:
-            await self._reject(decision_id, instrument, now, payload,
-                               [f"max_open_positions: {self._settings.max_open_positions} already open"])
-            return
+            return (False, {},
+                    [f"max_open_positions: {self._settings.max_open_positions} already open"])
 
         # No pyramiding: reject if we already hold this instrument
         if instrument in self._portfolio.positions:
-            await self._reject(decision_id, instrument, now, payload,
-                               [f"position_exists: already holding {instrument}"])
-            return
+            return (False, {}, [f"position_exists: already holding {instrument}"])
 
         # Daily loss circuit breaker
         if portfolio_value > 0:
             daily_loss_pct = float(-self._portfolio.daily_realized_pnl(now) / portfolio_value)
             if daily_loss_pct >= self._settings.max_daily_loss_pct:
-                await self._reject(decision_id, instrument, now, payload,
-                                   [f"daily_loss_limit: {daily_loss_pct:.1%} >= "
-                                    f"{self._settings.max_daily_loss_pct:.1%}"])
-                return
+                return (False, {},
+                        [f"daily_loss_limit: {daily_loss_pct:.1%} >= "
+                         f"{self._settings.max_daily_loss_pct:.1%}"])
 
         # Deterministic sizing
         size_usd = deterministic_size(
@@ -139,9 +164,8 @@ class RiskEngine:
         )
 
         if size_usd <= 0:
-            await self._reject(decision_id, instrument, now, payload,
-                               ["insufficient_capital: portfolio too small to size a position"])
-            return
+            return (False, {},
+                    ["insufficient_capital: portfolio too small to size a position"])
 
         # Stop price — mandatory. A position whose stop cannot be computed (no
         # tick data yet) would open unprotected and be skipped by the stop
@@ -150,10 +174,9 @@ class RiskEngine:
         side_str: str = payload.get("proposal", {}).get("side", "long")
         current_price = self._portfolio.current_price(instrument)
         if not current_price:
-            await self._reject(decision_id, instrument, now, payload,
-                               ["no_stop_price: no tick data for instrument yet; "
-                                "cannot compute a stop-loss"])
-            return
+            return (False, {},
+                    ["no_stop_price: no tick data for instrument yet; "
+                     "cannot compute a stop-loss"])
         offset = current_price * Decimal(str(self._settings.stop_loss_pct))
         stop_price = (current_price - offset if side_str == "long" else current_price + offset)
         stop_price = stop_price.quantize(Decimal("0.01"))
@@ -172,17 +195,7 @@ class RiskEngine:
         }
         approved_payload["risk"] = risk.model_dump(mode="json")
         approved_payload["status"] = "approved"
-
-        await self._bus.publish(EventEnvelope(
-            event_type=EventType.DECISION_APPROVED,
-            source="risk_engine",
-            event_time=now,
-            ingest_time=datetime.now(UTC),
-            correlation_id=UUID(decision_id) if decision_id else None,
-            payload=approved_payload,
-        ))
-        logger.info("risk_engine.approved", decision_id=decision_id,
-                    instrument=instrument, size_usd=str(size_usd))
+        return (True, approved_payload, [])
 
     async def _reject(
         self,
