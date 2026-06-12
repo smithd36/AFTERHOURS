@@ -227,7 +227,10 @@ class Decision(BaseModel):
     model: ModelInfo
     proposal: Proposal  # instrument + side + time_horizon (LLM); size_usd (sizing code)
     reasoning: str  # narrative from the LLM
-    evidence: list[Evidence]  # must be non-empty; every item cites a real Signal
+    # Must be non-empty — "no evidence → no trade" (PLANNING §6.2). Enforced here
+    # so an LLM proposal stripped of valid citations is rejected at construction
+    # rather than flowing into the risk engine / calibration window.
+    evidence: list[Evidence] = Field(min_length=1)
     confidence: float = Field(ge=0.0, le=1.0)
 
     # --- risk engine assessment (authoritative, filled in by risk engine) ---
