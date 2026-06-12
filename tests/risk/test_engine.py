@@ -170,6 +170,47 @@ async def test_daily_loss_breaker_resets_next_day(
     await engine.stop()
 
 
+async def test_no_tick_data_rejected_no_stop(
+    bus: InProcessBus, portfolio: Portfolio
+) -> None:
+    """A proposal with no tick data (no computable stop) is rejected, not approved."""
+    engine = RiskEngine(bus, portfolio, initial_mode=AutonomyMode.PAPER)
+    await engine.start()
+
+    approved: list[EventEnvelope] = []
+    rejected: list[EventEnvelope] = []
+    await bus.subscribe(EventType.DECISION_APPROVED, lambda e: approved.append(e))
+    await bus.subscribe(EventType.DECISION_REJECTED, lambda e: rejected.append(e))
+
+    # No tick seeded for SOL-USD → no stop can be computed.
+    await bus.publish(_proposed_envelope("SOL-USD"))
+
+    assert len(approved) == 0
+    assert len(rejected) == 1
+    reasons = rejected[0].payload["risk"]["rejection_reasons"]
+    assert any("no_stop_price" in r for r in reasons)
+
+    await engine.stop()
+
+
+async def test_approved_decision_always_has_stop(
+    bus: InProcessBus, portfolio: Portfolio
+) -> None:
+    """Every approved decision carries a non-null stop_price by construction."""
+    engine = RiskEngine(bus, portfolio, initial_mode=AutonomyMode.PAPER)
+    await engine.start()
+
+    await bus.publish(_tick_envelope("BTC-USD", "50000"))
+    approved: list[EventEnvelope] = []
+    await bus.subscribe(EventType.DECISION_APPROVED, lambda e: approved.append(e))
+
+    await bus.publish(_proposed_envelope("BTC-USD"))
+    assert len(approved) == 1
+    assert approved[0].payload["risk"]["stop_price"] is not None
+
+    await engine.stop()
+
+
 async def test_mode_change_via_event(bus: InProcessBus, portfolio: Portfolio) -> None:
     engine = RiskEngine(bus, portfolio, initial_mode=AutonomyMode.OBSERVE)
     await engine.start()

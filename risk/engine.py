@@ -143,14 +143,20 @@ class RiskEngine:
                                ["insufficient_capital: portfolio too small to size a position"])
             return
 
-        # Stop price
+        # Stop price — mandatory. A position whose stop cannot be computed (no
+        # tick data yet) would open unprotected and be skipped by the stop
+        # monitor forever. Planning §6.3: never fail open into more risk, so a
+        # missing stop is a hard rejection, not a silent None.
         side_str: str = payload.get("proposal", {}).get("side", "long")
         current_price = self._portfolio.current_price(instrument)
-        stop_price: Decimal | None = None
-        if current_price:
-            offset = current_price * Decimal(str(self._settings.stop_loss_pct))
-            stop_price = (current_price - offset if side_str == "long" else current_price + offset)
-            stop_price = stop_price.quantize(Decimal("0.01"))
+        if not current_price:
+            await self._reject(decision_id, instrument, now, payload,
+                               ["no_stop_price: no tick data for instrument yet; "
+                                "cannot compute a stop-loss"])
+            return
+        offset = current_price * Decimal(str(self._settings.stop_loss_pct))
+        stop_price = (current_price - offset if side_str == "long" else current_price + offset)
+        stop_price = stop_price.quantize(Decimal("0.01"))
 
         risk = RiskAssessment(
             max_loss_pct=self._settings.max_trade_loss_pct,
