@@ -20,7 +20,7 @@ from uuid import UUID, uuid4
 import structlog
 
 from core.bus.base import Bus, Subscription
-from core.schemas.decision import Fill, Side
+from core.schemas.decision import Fill, HumanAction, HumanActionType, Side
 from core.schemas.events import AutonomyMode, EventEnvelope, EventType
 from portfolio.ledger import Portfolio
 
@@ -162,6 +162,44 @@ class PaperExecutor:
             payload = refreshed
 
         await self._fill(payload, now)
+        return True
+
+    async def reject(
+        self, decision_id: str, reason: str, actor: str = "operator"
+    ) -> bool:
+        """Operator rejects a parked decision in ASSISTED mode.
+
+        Emits an audited ``decision.rejected`` carrying the operator's
+        ``HumanAction`` (Planning §2.10, §7.2 — rejections-with-reasons are
+        training signal). The decision_store tracker subscribes to this event,
+        so the decision transitions to ``rejected`` status. Returns False if the
+        decision isn't in the pending queue (404 at the route).
+        """
+        parked = self._pending.pop(decision_id, None)
+        if parked is None:
+            return False
+
+        now = datetime.now(UTC)
+        human = HumanAction(
+            actor=actor,
+            action=HumanActionType.REJECTED,
+            note=reason or None,
+            ts=now,
+        )
+        rejected_payload = dict(parked.payload)
+        rejected_payload["status"] = "rejected"
+        rejected_payload["human"] = human.model_dump(mode="json")
+
+        await self._bus.publish(EventEnvelope(
+            event_type=EventType.DECISION_REJECTED,
+            source="operator",
+            event_time=now,
+            ingest_time=now,
+            correlation_id=UUID(decision_id) if decision_id else None,
+            payload=rejected_payload,
+        ))
+        logger.info("paper_executor.operator_rejected",
+                    decision_id=decision_id, reason=reason)
         return True
 
     async def close_position(self, instrument: str, now: datetime | None = None) -> bool:

@@ -3,10 +3,15 @@
 from __future__ import annotations
 
 from fastapi import APIRouter, HTTPException, Request
+from pydantic import BaseModel
 
 from portfolio.executor import HaltedError, StaleDecisionError
 
 router = APIRouter(prefix="/api/decisions", tags=["decisions"])
+
+
+class RejectRequest(BaseModel):
+    reason: str = ""
 
 
 @router.get("")
@@ -34,9 +39,11 @@ async def execute_decision(decision_id: str, request: Request) -> dict:
 
 
 @router.post("/{decision_id}/reject")
-async def reject_decision(decision_id: str, request: Request) -> dict:
+async def reject_decision(
+    decision_id: str, body: RejectRequest, request: Request
+) -> dict:
     executor = request.app.state.executor
-    payload = executor._pending.pop(decision_id, None)
-    if payload is None:
+    ok = await executor.reject(decision_id, body.reason)
+    if not ok:
         raise HTTPException(status_code=404, detail="Decision not found in pending queue")
     return {"status": "rejected", "decision_id": decision_id}

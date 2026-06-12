@@ -288,6 +288,49 @@ async def test_execute_expires_on_failed_revalidation(
     await executor.stop()
 
 
+async def test_operator_reject_is_audited(
+    bus: InProcessBus, portfolio: Portfolio
+) -> None:
+    """Rejecting a parked decision emits an audited decision.rejected with the reason."""
+    executor = PaperExecutor(bus, portfolio, initial_mode=AutonomyMode.ASSISTED)
+    await executor.start()
+
+    rejected: list[EventEnvelope] = []
+    await bus.subscribe(EventType.DECISION_REJECTED, lambda e: rejected.append(e))
+
+    env = _approved("BTC-USD", "500")
+    decision_id = env.payload["id"]
+    await bus.publish(env)
+    assert len(executor.pending_decisions) == 1
+
+    ok = await executor.reject(decision_id, reason="thesis no longer holds")
+    assert ok is True
+    assert len(executor.pending_decisions) == 0
+
+    assert len(rejected) == 1
+    payload = rejected[0].payload
+    assert payload["id"] == decision_id            # decision_store tracker keys on this
+    assert payload["status"] == "rejected"
+    human = payload["human"]
+    assert human["actor"] == "operator"
+    assert human["action"] == "rejected"
+    assert human["note"] == "thesis no longer holds"   # the training-gold signal
+    assert str(rejected[0].correlation_id) == decision_id
+
+    await executor.stop()
+
+
+async def test_reject_unknown_decision_returns_false(
+    bus: InProcessBus, portfolio: Portfolio
+) -> None:
+    executor = PaperExecutor(bus, portfolio, initial_mode=AutonomyMode.ASSISTED)
+    await executor.start()
+
+    assert await executor.reject("not-in-queue", reason="x") is False
+
+    await executor.stop()
+
+
 async def test_shutdown_expires_pending(
     bus: InProcessBus, portfolio: Portfolio
 ) -> None:
