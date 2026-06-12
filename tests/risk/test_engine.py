@@ -108,6 +108,28 @@ async def test_paper_mode_approves_with_price(bus: InProcessBus, portfolio: Port
     await engine.stop()
 
 
+async def test_sub_cent_instrument_gets_nonzero_stop(
+    bus: InProcessBus, portfolio: Portfolio
+) -> None:
+    """A SHIB-class price must yield a real stop, not 0.00 from cent rounding."""
+    engine = RiskEngine(bus, portfolio, initial_mode=AutonomyMode.PAPER)
+    await engine.start()
+
+    await bus.publish(_tick_envelope("SHIB-USD", "0.00002345"))
+
+    approved: list[EventEnvelope] = []
+    await bus.subscribe(EventType.DECISION_APPROVED, lambda e: approved.append(e))
+
+    await bus.publish(_proposed_envelope("SHIB-USD"))
+
+    assert len(approved) == 1
+    stop = Decimal(approved[0].payload["risk"]["stop_price"])
+    assert stop > 0
+    assert stop < Decimal("0.00002345")  # long stop sits below entry
+
+    await engine.stop()
+
+
 async def test_max_positions_rejected(bus: InProcessBus, portfolio: Portfolio) -> None:
     from risk.settings import RiskSettings
     settings = RiskSettings(max_open_positions=0)  # artificially 0

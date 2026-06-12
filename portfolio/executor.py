@@ -20,6 +20,7 @@ from uuid import UUID, uuid4
 import structlog
 
 from core.bus.base import Bus, Subscription
+from core.pricing import quantize_price
 from core.schemas.decision import Fill, HumanAction, HumanActionType, Side
 from core.schemas.events import AutonomyMode, EventEnvelope, EventType
 from portfolio.ledger import Portfolio
@@ -344,7 +345,9 @@ class PaperExecutor:
             if side_str == "long"
             else current_price * (1 - slippage)
         )
-        fill_price = fill_price.quantize(Decimal("0.01"))
+        # Significant-figure rounding, not cents: a sub-cent fill price must
+        # not round to 0.00 (it would make quantity = size_usd / 0 blow up).
+        fill_price = quantize_price(fill_price)
         quantity = (size_usd / fill_price).quantize(Decimal("0.00000001"))
         fee = size_usd * Decimal(str(self._settings.fee_pct))
 

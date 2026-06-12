@@ -92,6 +92,29 @@ async def test_paper_mode_auto_fills(bus: InProcessBus, portfolio: Portfolio) ->
     await executor.stop()
 
 
+async def test_sub_cent_fill_price_and_quantity(
+    bus: InProcessBus, portfolio: Portfolio
+) -> None:
+    """A sub-cent instrument fills at a non-zero price with a sane quantity."""
+    executor = PaperExecutor(bus, portfolio, initial_mode=AutonomyMode.PAPER)
+    await executor.start()
+
+    await bus.publish(_tick("SHIB-USD", "0.00002"))
+    fills: list[EventEnvelope] = []
+    await bus.subscribe(EventType.ORDER_FILLED, lambda e: fills.append(e))
+
+    await bus.publish(_approved("SHIB-USD", "100"))
+    assert len(fills) == 1
+    fill_price = Decimal(fills[0].payload["fill_price"])
+    quantity = Decimal(fills[0].payload["quantity"])
+    assert fill_price > 0  # not collapsed to 0.00
+    # $100 at ~$0.00002 buys ~5,000,000 units, not a garbage figure.
+    assert quantity > Decimal(4_000_000)
+    assert quantity < Decimal(6_000_000)
+
+    await executor.stop()
+
+
 async def test_observe_mode_ignores(bus: InProcessBus, portfolio: Portfolio) -> None:
     executor = PaperExecutor(bus, portfolio, initial_mode=AutonomyMode.OBSERVE)
     await executor.start()

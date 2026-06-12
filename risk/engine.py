@@ -22,6 +22,7 @@ from uuid import UUID
 import structlog
 
 from core.bus.base import Bus, Subscription
+from core.pricing import quantize_price
 from core.schemas.decision import RiskAssessment, RiskVerdict, Side
 from core.schemas.events import AutonomyMode, EventEnvelope, EventType
 from portfolio.ledger import Portfolio
@@ -179,7 +180,9 @@ class RiskEngine:
                      "cannot compute a stop-loss"])
         offset = current_price * Decimal(str(self._settings.stop_loss_pct))
         stop_price = (current_price - offset if side_str == "long" else current_price + offset)
-        stop_price = stop_price.quantize(Decimal("0.01"))
+        # Per-instrument-scaled rounding: cent rounding would zero out a
+        # sub-cent stop (SHIB/PEPE-class prices), leaving a long unprotected.
+        stop_price = quantize_price(stop_price)
 
         risk = RiskAssessment(
             max_loss_pct=self._settings.max_trade_loss_pct,
