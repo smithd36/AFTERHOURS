@@ -22,6 +22,7 @@ from uuid import UUID
 import structlog
 
 from core.bus.base import Bus, Subscription
+from core.mode import ModeController
 from core.pricing import quantize_price
 from core.schemas.decision import RiskAssessment, RiskVerdict, Side
 from core.schemas.events import AutonomyMode, EventEnvelope, EventType
@@ -38,17 +39,20 @@ class RiskEngine:
         self,
         bus: Bus,
         portfolio: Portfolio,
+        modes: ModeController | None = None,
         initial_mode: AutonomyMode = AutonomyMode.OBSERVE,
         settings: RiskSettings | None = None,
     ) -> None:
         self._bus = bus
         self._portfolio = portfolio
-        self._mode = initial_mode
+        # The mode lives in one place (core.mode.ModeController); we read it,
+        # never cache it, so we can't drift from the rest of the system. When no
+        # shared controller is supplied (unit tests) build a private one seeded
+        # at initial_mode.
+        self._modes = modes if modes is not None else ModeController(bus, initial_mode)
         self._settings = settings or RiskSettings()
         self._proposed_sub: Subscription | None = None
         self._tick_sub: Subscription | None = None
-        self._mode_sub: Subscription | None = None
-        self._halt_sub: Subscription | None = None
 
     async def start(self) -> None:
         self._proposed_sub = await self._bus.subscribe(
@@ -57,39 +61,15 @@ class RiskEngine:
         self._tick_sub = await self._bus.subscribe(
             EventType.MARKET_TICK, self._handle_tick
         )
-        self._mode_sub = await self._bus.subscribe(
-            EventType.SYSTEM_MODE_CHANGED, self._handle_mode_change
-        )
-        # React to the kill switch directly, not only via its mode-change side effect.
-        self._halt_sub = await self._bus.subscribe(
-            EventType.RISK_HALT, self._handle_halt
-        )
-        logger.info("risk_engine.started", mode=self._mode.value)
+        logger.info("risk_engine.started", mode=self._modes.current.value)
 
     async def stop(self) -> None:
-        for sub in (self._proposed_sub, self._tick_sub, self._mode_sub, self._halt_sub):
+        for sub in (self._proposed_sub, self._tick_sub):
             if sub is not None:
                 await self._bus.unsubscribe(sub)
         self._proposed_sub = None
         self._tick_sub = None
-        self._mode_sub = None
-        self._halt_sub = None
         logger.info("risk_engine.stopped")
-
-    # ------------------------------------------------------------------
-    # Mode management
-    # ------------------------------------------------------------------
-
-    async def _handle_mode_change(self, envelope: EventEnvelope) -> None:
-        new_mode = AutonomyMode(envelope.payload.get("to_mode", self._mode.value))
-        logger.info("risk_engine.mode_changed", from_mode=self._mode.value, to_mode=new_mode.value)
-        self._mode = new_mode
-
-    async def _handle_halt(self, envelope: EventEnvelope) -> None:
-        # Kill switch: force OBSERVE so all subsequent proposals are rejected,
-        # regardless of the halt's mode-change event ordering.
-        logger.warning("risk_engine.halted", reason=envelope.payload.get("reason"))
-        self._mode = AutonomyMode.OBSERVE
 
     # ------------------------------------------------------------------
     # Pre-trade checks
@@ -134,7 +114,7 @@ class RiskEngine:
         instrument: str = str(payload.get("proposal", {}).get("instrument", ""))
 
         # Observe mode: shadow decision, no execution
-        if self._mode == AutonomyMode.OBSERVE:
+        if self._modes.current == AutonomyMode.OBSERVE:
             return (False, {}, ["observe_mode: shadow decision logged for calibration"])
 
         portfolio_value = self._portfolio.total_value

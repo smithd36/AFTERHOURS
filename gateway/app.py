@@ -34,6 +34,7 @@ from core.bus import InProcessBus
 from core.bus.store import SqliteEventStore
 from core.db import migrate, open_db
 from core.logging import configure_logging
+from core.mode import ModeController
 from core.schemas.events import AutonomyMode, EventEnvelope, EventType
 from ingestion.alerts import PriceAlertGenerator
 from ingestion.equity import EquityFeed
@@ -117,18 +118,22 @@ async def default_lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
     await bus.subscribe(EventType.DECISION_APPROVED, _track_decision)
     await bus.subscribe(EventType.DECISION_REJECTED, _track_decision)
 
-    # Phase 3: risk + paper trading pipeline
-    initial_mode = AutonomyMode.OBSERVE
+    # Phase 3: risk + paper trading pipeline.
+    # One ModeController is the single source of truth for the autonomy mode;
+    # every component reads it rather than caching its own copy, so a dropped or
+    # reordered mode-change event can't leave subsystems trading in different
+    # modes. Restart fail-safe: always starts in OBSERVE (core.mode, ADR-004).
+    mode_controller = ModeController(bus, initial=AutonomyMode.OBSERVE)
     portfolio = Portfolio(bus)
     await portfolio.start()
 
-    risk_engine = RiskEngine(bus, portfolio, initial_mode=initial_mode)
+    risk_engine = RiskEngine(bus, portfolio, modes=mode_controller)
     await risk_engine.start()
 
     # Inject the risk engine's pre-trade evaluation so a parked ASSISTED
     # decision is re-validated (and its size/stop recomputed) at execute time.
     executor = PaperExecutor(
-        bus, portfolio, initial_mode=initial_mode, validator=risk_engine.evaluate
+        bus, portfolio, modes=mode_controller, validator=risk_engine.evaluate
     )
     await executor.start()
 
@@ -140,7 +145,7 @@ async def default_lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
     # feeds the calibration engine; still-unresolved proposals are re-tracked
     # and caught up against recent tick history so restarts don't orphan them.
     calibration_settings = CalibrationSettings()
-    resolver = OutcomeResolver(bus, initial_mode=initial_mode, settings=calibration_settings)
+    resolver = OutcomeResolver(bus, modes=mode_controller, settings=calibration_settings)
     calibration_engine = CalibrationEngine(bus, settings=calibration_settings)
     gate_tracker = GateTracker(bus, calibration_engine, settings=calibration_settings)
 
@@ -206,7 +211,7 @@ async def default_lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
     app.state.broadcaster = broadcaster
     app.state.conn = conn
     app.state.event_store = store
-    app.state.autonomy_mode = initial_mode
+    app.state.mode_controller = mode_controller
     app.state.portfolio = portfolio
     app.state.executor = executor
     app.state.decision_store = decision_store

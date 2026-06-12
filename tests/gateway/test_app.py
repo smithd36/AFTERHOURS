@@ -17,6 +17,7 @@ from fastapi.testclient import TestClient
 
 from calibration import CalibrationEngine, GateTracker
 from core.bus import InMemoryEventStore, InProcessBus
+from core.mode import ModeController
 from gateway.app import create_app
 from gateway.broadcaster import Broadcaster
 
@@ -38,11 +39,14 @@ async def _lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
     gate_tracker = GateTracker(bus, calibration_engine)
     await gate_tracker.start()
 
+    mode_controller = ModeController(bus)
+
     app.state.bus = bus
     app.state.broadcaster = broadcaster
     app.state.event_store = store
     app.state.calibration_engine = calibration_engine
     app.state.gate_tracker = gate_tracker
+    app.state.mode_controller = mode_controller
 
     yield
 
@@ -195,6 +199,44 @@ class TestWebSocketEndpoint:
 # ---------------------------------------------------------------------------
 # Calibration endpoints
 # ---------------------------------------------------------------------------
+
+
+class TestModeEndpoints:
+    def test_starts_in_observe(self, client: TestClient) -> None:
+        assert client.get("/api/mode").json()["mode"] == "observe"
+
+    def test_set_mode_updates_single_source_of_truth(self, client: TestClient) -> None:
+        resp = client.post("/api/mode", json={"mode": "paper"})
+        assert resp.status_code == 200
+        assert resp.json()["mode"] == "paper"
+        # Both the read route and the controller object reflect the change — there
+        # is only one place the value lives.
+        assert client.get("/api/mode").json()["mode"] == "paper"
+        assert client.app.state.mode_controller.current.value == "paper"
+
+    def test_invalid_transition_rejected(self, client: TestClient) -> None:
+        # observe → semi_auto is not a permitted operator transition.
+        resp = client.post("/api/mode", json={"mode": "semi_auto"})
+        assert resp.status_code == 422
+        assert client.app.state.mode_controller.current.value == "observe"
+
+    def test_same_mode_is_idempotent(self, client: TestClient) -> None:
+        resp = client.post("/api/mode", json={"mode": "observe"})
+        assert resp.status_code == 200
+        assert resp.json()["mode"] == "observe"
+
+    def test_halt_forces_observe_and_emits_risk_halt(self, client: TestClient) -> None:
+        import json as _json
+
+        client.post("/api/mode", json={"mode": "paper"})
+        with client.websocket_connect("/ws") as ws:
+            resp = client.post("/api/halt", json={"reason": "panic"})
+            assert resp.status_code == 200
+            assert resp.json()["mode"] == "observe"
+            # The kill switch publishes risk.halt and the controller is now OBSERVE.
+            seen = {_json.loads(ws.receive_text())["event_type"] for _ in range(2)}
+            assert "risk.halt" in seen
+        assert client.app.state.mode_controller.current.value == "observe"
 
 
 class TestCalibrationEndpoints:

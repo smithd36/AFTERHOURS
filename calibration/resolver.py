@@ -31,6 +31,7 @@ from uuid import UUID
 import structlog
 
 from core.bus.base import Bus, Subscription
+from core.mode import ModeController
 from core.schemas.decision import Side, TimeHorizon
 from core.schemas.events import AutonomyMode, EventEnvelope, EventType
 
@@ -57,11 +58,15 @@ class OutcomeResolver:
     def __init__(
         self,
         bus: Bus,
+        modes: ModeController | None = None,
         initial_mode: AutonomyMode = AutonomyMode.OBSERVE,
         settings: CalibrationSettings | None = None,
     ) -> None:
         self._bus = bus
-        self._mode = initial_mode
+        # Read the live mode to stamp mode_at_proposal; never cache it. When no
+        # shared controller is supplied (unit tests / backtest) build a private
+        # one seeded at initial_mode.
+        self._modes = modes if modes is not None else ModeController(bus, initial_mode)
         self._settings = settings or CalibrationSettings()
         self._pending: dict[str, _Pending] = {}
         self._last_price: dict[str, Decimal] = {}  # instrument → last tick price
@@ -77,7 +82,6 @@ class OutcomeResolver:
             (EventType.DECISION_APPROVED, self._handle_approved),
             (EventType.MARKET_TICK, self._handle_tick),
             (EventType.THESIS_INVALIDATED, self._handle_thesis_invalidated),
-            (EventType.SYSTEM_MODE_CHANGED, self._handle_mode_change),
         ):
             self._subs.append(await self._bus.subscribe(pattern, handler))
         logger.info("outcome_resolver.started", pending=len(self._pending))
@@ -118,11 +122,8 @@ class OutcomeResolver:
     # Event handlers
     # ------------------------------------------------------------------
 
-    async def _handle_mode_change(self, envelope: EventEnvelope) -> None:
-        self._mode = AutonomyMode(envelope.payload.get("to_mode", self._mode.value))
-
     async def _handle_proposed(self, envelope: EventEnvelope) -> None:
-        self._add_pending(envelope, self._mode)
+        self._add_pending(envelope, self._modes.current)
 
     async def _handle_approved(self, envelope: EventEnvelope) -> None:
         # The risk engine attaches a stop price on approval; a stop breach

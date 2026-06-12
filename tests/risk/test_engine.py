@@ -9,6 +9,7 @@ from uuid import uuid4
 import pytest
 
 from core.bus import InMemoryEventStore, InProcessBus
+from core.mode import ModeController
 from core.schemas.decision import Side
 from core.schemas.events import AutonomyMode, EventEnvelope, EventType
 from portfolio.ledger import Portfolio
@@ -297,20 +298,14 @@ async def test_approved_decision_always_has_stop(
     await engine.stop()
 
 
-async def test_mode_change_via_event(bus: InProcessBus, portfolio: Portfolio) -> None:
-    engine = RiskEngine(bus, portfolio, initial_mode=AutonomyMode.OBSERVE)
+async def test_mode_change_via_controller(bus: InProcessBus, portfolio: Portfolio) -> None:
+    """The engine reads the shared ModeController live: promoting it to PAPER
+    makes the next proposal approvable, with no cached engine-side mode."""
+    modes = ModeController(bus, initial=AutonomyMode.OBSERVE)
+    engine = RiskEngine(bus, portfolio, modes=modes)
     await engine.start()
 
-    # Change to PAPER via event
-    now = datetime.now(UTC)
-    await bus.publish(EventEnvelope(
-        event_type=EventType.SYSTEM_MODE_CHANGED,
-        source="test",
-        event_time=now,
-        ingest_time=now,
-        payload={"from_mode": "observe", "to_mode": "paper", "actor": "test", "reason": ""},
-    ))
-
+    await modes.set(AutonomyMode.PAPER)
     await bus.publish(_tick_envelope("BTC-USD", "50000"))
 
     approved: list[EventEnvelope] = []

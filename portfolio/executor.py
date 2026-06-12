@@ -20,6 +20,7 @@ from uuid import UUID, uuid4
 import structlog
 
 from core.bus.base import Bus, Subscription
+from core.mode import ModeController
 from core.pricing import quantize_price
 from core.schemas.decision import Fill, HumanAction, HumanActionType, Order, OrderType, Side
 from core.schemas.events import AutonomyMode, EventEnvelope, EventType
@@ -60,13 +61,18 @@ class PaperExecutor:
         self,
         bus: Bus,
         portfolio: Portfolio,
+        modes: ModeController | None = None,
         initial_mode: AutonomyMode = AutonomyMode.OBSERVE,
         settings: PortfolioSettings | None = None,
         validator: PretradeValidator | None = None,
     ) -> None:
         self._bus = bus
         self._portfolio = portfolio
-        self._mode = initial_mode
+        # Authority is read live from the shared ModeController, never cached, so
+        # a parked order can't be filled under a mode that has since changed.
+        # Mode-change/halt events are still subscribed below, but only to drive
+        # the side effect (flushing the queue), not to learn the current mode.
+        self._modes = modes if modes is not None else ModeController(bus, initial_mode)
         self._settings = settings or PortfolioSettings()
         # Re-runs pre-trade checks + recomputes size/stop when a parked decision
         # is executed. When None, execute() fills the parked payload as-is.
@@ -105,7 +111,7 @@ class PaperExecutor:
         self._tick_sub = await self._bus.subscribe(
             EventType.MARKET_TICK, self._handle_tick
         )
-        logger.info("paper_executor.started", mode=self._mode.value)
+        logger.info("paper_executor.started", mode=self._modes.current.value)
 
     async def stop(self) -> None:
         # Don't silently drop parked decisions on shutdown/restart — expire them
@@ -134,12 +140,13 @@ class PaperExecutor:
         the queue, so this guard is the kill switch's last line of defence
         against filling a parked order.
         """
-        if self._mode.level < AutonomyMode.ASSISTED.level:
+        mode = self._modes.current
+        if mode.level < AutonomyMode.ASSISTED.level:
             logger.warning(
-                "paper_executor.execute_refused", decision_id=decision_id, mode=self._mode.value
+                "paper_executor.execute_refused", decision_id=decision_id, mode=mode.value
             )
             raise HaltedError(
-                f"execution requires ASSISTED authority or higher; mode is {self._mode.value}"
+                f"execution requires ASSISTED authority or higher; mode is {mode.value}"
             )
         parked = self._pending.pop(decision_id, None)
         if parked is None:
@@ -275,16 +282,15 @@ class PaperExecutor:
     # ------------------------------------------------------------------
 
     async def _handle_mode_change(self, envelope: EventEnvelope) -> None:
-        self._mode = AutonomyMode(envelope.payload.get("to_mode", self._mode.value))
-        # Any demotion below ASSISTED strips execution authority; parked
-        # decisions are no longer actionable, so expire them.
-        if self._mode.level < AutonomyMode.ASSISTED.level:
+        # The controller is already authoritative; we only react to demotions
+        # below ASSISTED, which strip execution authority and make parked
+        # decisions un-actionable, so expire them.
+        if self._modes.current.level < AutonomyMode.ASSISTED.level:
             await self._expire_pending("mode_changed", envelope.event_time)
 
     async def _handle_halt(self, envelope: EventEnvelope) -> None:
-        # Kill switch: drop authority and flush the queue immediately, independent
-        # of the mode-change event that the halt also publishes.
-        self._mode = AutonomyMode.OBSERVE
+        # Kill switch: the controller has already forced OBSERVE; flush the queue
+        # immediately, independent of the mode-change event the halt also emits.
         await self._expire_pending(envelope.payload.get("reason", "halt"), envelope.event_time)
 
     async def _handle_tick(self, envelope: EventEnvelope) -> None:
@@ -325,11 +331,12 @@ class PaperExecutor:
         logger.info("paper_executor.expired", decision_id=decision_id, reason=reason)
 
     async def _handle_approved(self, envelope: EventEnvelope) -> None:
-        if self._mode == AutonomyMode.OBSERVE:
+        mode = self._modes.current
+        if mode == AutonomyMode.OBSERVE:
             return
-        if self._mode == AutonomyMode.PAPER:
+        if mode == AutonomyMode.PAPER:
             await self._fill(envelope.payload, envelope.event_time)
-        elif self._mode == AutonomyMode.ASSISTED:
+        elif mode == AutonomyMode.ASSISTED:
             decision_id = str(envelope.payload.get("id", ""))
             if decision_id:
                 self._pending[decision_id] = _ParkedDecision(

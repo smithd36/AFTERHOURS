@@ -10,6 +10,7 @@ import pytest
 from calibration.resolver import OutcomeResolver
 from calibration.settings import CalibrationSettings
 from core.bus import InMemoryEventStore, InProcessBus
+from core.mode import ModeController
 from core.schemas.events import AutonomyMode, EventEnvelope, EventType
 
 T0 = datetime(2026, 6, 9, 12, 0, 0, tzinfo=UTC)
@@ -219,21 +220,22 @@ async def test_thesis_invalidation_resolves_at_last_price(
 
 async def test_mode_change_stamps_new_mode(
     bus: InProcessBus,
-    resolver: OutcomeResolver,
     resolved: list[EventEnvelope],
 ) -> None:
-    await bus.publish(EventEnvelope(
-        event_type=EventType.SYSTEM_MODE_CHANGED,
-        source="test",
-        event_time=T0,
-        ingest_time=T0,
-        payload={"from_mode": "observe", "to_mode": "paper", "actor": "test", "reason": ""},
-    ))
+    """A proposal is stamped with the live mode read from the shared controller,
+    so promoting it before the proposal flows through to mode_at_proposal."""
+    modes = ModeController(bus, initial=AutonomyMode.OBSERVE)
+    resolver = OutcomeResolver(bus, modes=modes)
+    await resolver.start()
+
+    await modes.set(AutonomyMode.PAPER)
     await bus.publish(_proposed())
     await bus.publish(_tick("BTC-USD", "100", T0 + timedelta(seconds=1)))
     await bus.publish(_tick("BTC-USD", "110", T0 + timedelta(hours=5)))
 
     assert resolved[0].payload["mode_at_proposal"] == "paper"
+
+    await resolver.stop()
 
 
 async def test_seed_and_replay_catch_up(

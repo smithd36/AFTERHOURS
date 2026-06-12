@@ -10,30 +10,11 @@ from uuid import uuid4
 import pytest
 
 from core.bus import InMemoryEventStore, InProcessBus
+from core.mode import ModeController
 from core.schemas.events import AutonomyMode, EventEnvelope, EventType
 from portfolio.executor import HaltedError, PaperExecutor, StaleDecisionError
 from portfolio.ledger import Portfolio
 from portfolio.settings import PortfolioSettings
-
-
-def _halt(reason: str = "operator_halt") -> EventEnvelope:
-    return EventEnvelope(
-        event_type=EventType.RISK_HALT,
-        source="operator",
-        event_time=datetime.now(UTC),
-        ingest_time=datetime.now(UTC),
-        payload={"reason": reason, "scope": "all", "actor": "operator"},
-    )
-
-
-def _mode_changed(to_mode: AutonomyMode) -> EventEnvelope:
-    return EventEnvelope(
-        event_type=EventType.SYSTEM_MODE_CHANGED,
-        source="operator",
-        event_time=datetime.now(UTC),
-        ingest_time=datetime.now(UTC),
-        payload={"from_mode": "assisted", "to_mode": to_mode.value, "actor": "operator"},
-    )
 
 
 @pytest.fixture
@@ -230,7 +211,8 @@ async def test_halt_expires_pending_and_blocks_execution(
     bus: InProcessBus, portfolio: Portfolio
 ) -> None:
     """The kill switch must flush the queue and refuse any later execute()."""
-    executor = PaperExecutor(bus, portfolio, initial_mode=AutonomyMode.ASSISTED)
+    modes = ModeController(bus, initial=AutonomyMode.ASSISTED)
+    executor = PaperExecutor(bus, portfolio, modes=modes)
     await executor.start()
 
     await bus.publish(_tick("BTC-USD", "50000"))
@@ -244,8 +226,8 @@ async def test_halt_expires_pending_and_blocks_execution(
     await bus.publish(env)
     assert len(executor.pending_decisions) == 1
 
-    # Kill switch fires.
-    await bus.publish(_halt())
+    # Kill switch fires through the controller (forces OBSERVE, publishes risk.halt).
+    await modes.halt()
 
     # Queue is flushed with an audited decision.expired carrying the decision id.
     assert len(executor.pending_decisions) == 0
@@ -265,7 +247,8 @@ async def test_mode_demotion_expires_pending(
     bus: InProcessBus, portfolio: Portfolio
 ) -> None:
     """Demotion below ASSISTED expires parked decisions even without a halt."""
-    executor = PaperExecutor(bus, portfolio, initial_mode=AutonomyMode.ASSISTED)
+    modes = ModeController(bus, initial=AutonomyMode.ASSISTED)
+    executor = PaperExecutor(bus, portfolio, modes=modes)
     await executor.start()
 
     await bus.publish(_tick("BTC-USD", "50000"))
@@ -275,7 +258,7 @@ async def test_mode_demotion_expires_pending(
     await bus.publish(_approved("BTC-USD", "500"))
     assert len(executor.pending_decisions) == 1
 
-    await bus.publish(_mode_changed(AutonomyMode.OBSERVE))
+    await modes.set(AutonomyMode.OBSERVE)
     assert len(executor.pending_decisions) == 0
     assert len(expired) == 1
 

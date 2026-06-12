@@ -37,6 +37,7 @@ import structlog
 
 from calibration import CalibrationEngine, CalibrationSettings, OutcomeResolver
 from core.bus import InMemoryEventStore, InProcessBus
+from core.mode import ModeController
 from core.schemas.events import AutonomyMode, EventEnvelope, EventType
 from portfolio import PaperExecutor, Portfolio
 from portfolio.settings import PortfolioSettings
@@ -89,17 +90,20 @@ class BacktestRunner:
         store = InMemoryEventStore()
         bus = InProcessBus(store)
 
+        # One mode source of truth, fixed for the whole replay (backtests don't
+        # change mode mid-run); every component reads it instead of caching.
+        mode_controller = ModeController(bus, initial=self._mode)
         portfolio = Portfolio(bus, settings=self._portfolio_settings)
         risk_engine = RiskEngine(
-            bus, portfolio, initial_mode=self._mode, settings=self._risk_settings
+            bus, portfolio, modes=mode_controller, settings=self._risk_settings
         )
         executor = PaperExecutor(
-            bus, portfolio, initial_mode=self._mode, settings=self._portfolio_settings
+            bus, portfolio, modes=mode_controller, settings=self._portfolio_settings
         )
         thesis_generator = ThesisGenerator(bus, self._provider, settings=self._thesis_settings)
         decision_generator = DecisionGenerator(bus, self._provider)
         resolver = OutcomeResolver(
-            bus, initial_mode=self._mode, settings=self._calibration_settings
+            bus, modes=mode_controller, settings=self._calibration_settings
         )
         calibration = CalibrationEngine(bus, settings=self._calibration_settings)
 
