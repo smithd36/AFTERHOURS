@@ -107,6 +107,57 @@ async def test_daily_pnl_resets_on_utc_day_rollover(
     assert portfolio.daily_realized_pnl(day2) == Decimal("10")  # not 10 - 100
 
 
+async def test_rehydrate_rebuilds_cash_positions_and_daily_pnl(bus: InProcessBus) -> None:
+    """A fresh portfolio replays the persisted fill history into the same cash,
+    open positions and daily-P&L state it would have had without a restart."""
+    day = datetime(2026, 3, 1, 12, 0, tzinfo=UTC)
+    history = [
+        # Open BTC and leave it open.
+        _fill_event("BTC-USD", "open", "long", "50000", "0.01", "500", fee="0.5",
+                    stop_price="48500", event_time=day),
+        # Open ETH then close it at a $100 loss the same day.
+        _fill_event("ETH-USD", "open", "long", "2000", "1", "2000", event_time=day),
+        _fill_event("ETH-USD", "close", "long", "1900", "1", "0", event_time=day),
+    ]
+
+    fresh = Portfolio(bus)
+    assert fresh.cash == Decimal("10000.00")  # initial_cash, pre-rehydrate
+    await fresh.rehydrate(history)
+
+    # Cash: 10000 -500.5 (BTC open+fee) -2000 (ETH open) +1900 (ETH close) = 9399.5
+    assert fresh.cash == Decimal("9399.5")
+    assert "BTC-USD" in fresh.positions
+    assert fresh.positions["BTC-USD"].stop_price == Decimal("48500")  # stop survives restart
+    assert "ETH-USD" not in fresh.positions
+    assert fresh.open_position_count == 1
+    # The realized day-1 loss is preserved for the daily breaker.
+    assert fresh.daily_realized_pnl(day) == Decimal("-100")
+
+
+async def test_rehydrate_equivalent_to_live_application(bus: InProcessBus) -> None:
+    """Rehydration is the live fill path replayed: both end in identical state."""
+    day = datetime(2026, 3, 2, 9, 0, tzinfo=UTC)
+    history = [
+        _fill_event("BTC-USD", "open", "long", "100", "1", "100", fee="0.1", event_time=day),
+        _fill_event("BTC-USD", "close", "long", "120", "1", "0", fee="0.12", event_time=day),
+        _fill_event("SOL-USD", "open", "long", "50", "2", "100", event_time=day),
+    ]
+
+    live = Portfolio(bus)
+    await live.start()
+    for env in history:
+        await bus.publish(env)
+
+    rehydrated = Portfolio(bus)
+    await rehydrated.rehydrate(history)
+
+    assert rehydrated.cash == live.cash
+    assert set(rehydrated.positions) == set(live.positions)
+    assert rehydrated.daily_realized_pnl(day) == live.daily_realized_pnl(day)
+
+    await live.stop()
+
+
 async def test_tick_updates_current_price(bus: InProcessBus, portfolio: Portfolio) -> None:
     await bus.publish(_fill_event("BTC-USD", "open", "long", "50000", "0.01", "500"))
 

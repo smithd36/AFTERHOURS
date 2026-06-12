@@ -7,6 +7,7 @@ to keep unrealized P&L current. All arithmetic in Decimal.
 
 from __future__ import annotations
 
+from collections.abc import Iterable
 from datetime import UTC, date, datetime
 from decimal import Decimal
 
@@ -53,6 +54,34 @@ class Portfolio:
         self._fill_sub = None
         self._tick_sub = None
         logger.info("portfolio.stopped")
+
+    # ------------------------------------------------------------------
+    # Startup rehydration
+    # ------------------------------------------------------------------
+
+    async def rehydrate(self, fills: Iterable[EventEnvelope]) -> None:
+        """Rebuild cash, open positions and the daily-P&L accumulator by
+        replaying persisted ``order.filled`` events in event-time order.
+
+        Without this a restart silently resets the paper book to
+        ``initial_cash`` and forgets every open position — corrupting the
+        autonomy-gate evidence window (realized P&L / daily-loss state) that
+        the Paper → Assisted promotion depends on (PLANNING Appendix B). It
+        mirrors :meth:`OutcomeResolver.replay`.
+
+        Pure state reconstruction — publishes nothing. Must be called *before*
+        :meth:`start` so a replayed fill is never also applied as a live event.
+        The daily accumulator self-corrects across a day boundary: the
+        ``daily_realized_pnl`` getter is event-time keyed, so a stale prior-day
+        total reads as 0 once the clock advances. Open positions carry the
+        entry price as ``current_price`` until the first live tick refreshes it.
+        """
+        count = 0
+        for envelope in fills:
+            await self._handle_fill(envelope)
+            count += 1
+        logger.info("portfolio.rehydrated", fills=count, cash=str(self.cash),
+                    open_positions=len(self.positions))
 
     # ------------------------------------------------------------------
     # Queries (used by risk engine and API routes)

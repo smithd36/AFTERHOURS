@@ -10,6 +10,7 @@ an operator decision informed by this report, never an automatic one.
 
 from __future__ import annotations
 
+from collections.abc import Iterable
 from typing import Any
 
 import structlog
@@ -45,6 +46,19 @@ class GateTracker:
         self._settings = settings or CalibrationSettings()
         self._limit_breaches = 0
         self._sub: Subscription | None = None
+
+    def seed(self, breaches: Iterable[EventEnvelope]) -> None:
+        """Restore the lifetime limit-breach count from persisted
+        ``risk.limit_breached`` events.
+
+        Without this the count resets to 0 on every restart and the
+        Paper → Assisted "0 breaches" criterion silently *passes* despite real
+        prior breaches — forgetting evidence in the safe direction. Seed before
+        :meth:`start` so historical breaches aren't double-counted against live
+        ones.
+        """
+        self._limit_breaches = sum(1 for _ in breaches)
+        logger.info("gate_tracker.seeded", limit_breaches=self._limit_breaches)
 
     async def start(self) -> None:
         self._sub = await self._bus.subscribe(EventType.RISK_LIMIT_BREACHED, self._handle_breach)

@@ -114,9 +114,18 @@ async def default_lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
         if did:
             decision_store[did] = {**p, "_event_type": envelope.event_type}
 
-    await bus.subscribe(EventType.DECISION_PROPOSED, _track_decision)
-    await bus.subscribe(EventType.DECISION_APPROVED, _track_decision)
-    await bus.subscribe(EventType.DECISION_REJECTED, _track_decision)
+    decision_event_types = [
+        EventType.DECISION_PROPOSED.value,
+        EventType.DECISION_APPROVED.value,
+        EventType.DECISION_REJECTED.value,
+    ]
+    for event_type in decision_event_types:
+        await bus.subscribe(event_type, _track_decision)
+    # Rebuild the decision store from recent history so the REST API isn't empty
+    # after a restart. recent() is chronological, so the latest event per id
+    # wins — the same reduction the live tracker applies.
+    for envelope in await store.recent(decision_event_types, limit=2000):
+        await _track_decision(envelope)
 
     # Phase 3: risk + paper trading pipeline.
     # One ModeController is the single source of truth for the autonomy mode;
@@ -125,6 +134,10 @@ async def default_lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
     # modes. Restart fail-safe: always starts in OBSERVE (core.mode, ADR-004).
     mode_controller = ModeController(bus, initial=AutonomyMode.OBSERVE)
     portfolio = Portfolio(bus)
+    # Rehydrate the paper book from the full order.filled history before
+    # subscribing — otherwise a restart resets cash to initial_cash and drops
+    # open positions, corrupting the autonomy gate's P&L evidence window.
+    await portfolio.rehydrate(await store.range([EventType.ORDER_FILLED.value]))
     await portfolio.start()
 
     risk_engine = RiskEngine(bus, portfolio, modes=mode_controller)
@@ -151,6 +164,9 @@ async def default_lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
 
     resolved_events = await store.recent([EventType.DECISION_RESOLVED.value], limit=2000)
     calibration_engine.seed(resolved_events)
+    # Restore the lifetime limit-breach count so the "0 breaches" gate criterion
+    # survives restarts instead of silently resetting to 0 (range = all-time).
+    gate_tracker.seed(await store.range([EventType.RISK_LIMIT_BREACHED.value]))
     resolved_ids = {str(e.payload.get("decision_id", "")) for e in resolved_events}
     # The historical mode isn't recorded on the proposal, so derive it from the
     # risk verdict: an observe_mode rejection marks a shadow decision; anything
