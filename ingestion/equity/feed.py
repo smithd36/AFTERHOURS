@@ -20,6 +20,8 @@ from __future__ import annotations
 
 import asyncio
 from datetime import UTC, datetime
+from decimal import Decimal, InvalidOperation
+from typing import Any
 
 import httpx
 import structlog
@@ -33,6 +35,50 @@ logger = structlog.get_logger(__name__)
 
 _ALPACA_SNAPSHOT_URL = "https://data.alpaca.markets/v2/stocks/snapshots"
 _POLYGON_LAST_TRADE_URL = "https://api.polygon.io/v2/last/trade/{symbol}"
+
+
+def alpaca_snapshot_to_payload(snapshot: dict[str, Any]) -> dict[str, str] | None:
+    """
+    Map one symbol's Alpaca snapshot to the optional market.tick payload
+    fields (same keys as the Kraken normalizer).  Returns None when the
+    snapshot has no last trade price.
+
+    For equities, `price_change_pct_24h` is the change vs. the previous
+    session's close — the standard day-% convention — not a literal 24h
+    window.  IEX reports a bid/ask of 0 when that side of the book is
+    empty (e.g. outside market hours), so zeros are omitted.
+    """
+    price = (snapshot.get("latestTrade") or {}).get("p")
+    if price is None:
+        return None
+
+    payload: dict[str, str] = {"price": str(price)}
+
+    quote = snapshot.get("latestQuote") or {}
+    if quote.get("bp"):
+        payload["best_bid"] = str(quote["bp"])
+    if quote.get("ap"):
+        payload["best_ask"] = str(quote["ap"])
+
+    daily = snapshot.get("dailyBar") or {}
+    optional = {
+        "high_24h": daily.get("h"),
+        "low_24h": daily.get("l"),
+        "volume_24h": daily.get("v"),
+    }
+    for key, val in optional.items():
+        if val is not None:
+            payload[key] = str(val)
+
+    prev_close = (snapshot.get("prevDailyBar") or {}).get("c")
+    if prev_close:
+        try:
+            change = (Decimal(str(price)) / Decimal(str(prev_close)) - 1) * 100
+            payload["price_change_pct_24h"] = str(round(change, 2))
+        except (InvalidOperation, ZeroDivisionError):
+            pass
+
+    return payload
 
 
 class EquityFeed:
@@ -96,9 +142,9 @@ class EquityFeed:
         resp.raise_for_status()
         now = datetime.now(UTC)
         for symbol, snapshot in resp.json().items():
-            price = (snapshot.get("latestTrade") or {}).get("p")
-            if price is not None:
-                await self._emit_tick(symbol, str(price), "alpaca", now)
+            payload = alpaca_snapshot_to_payload(snapshot)
+            if payload is not None:
+                await self._emit_tick(symbol, "alpaca", now, payload)
 
     async def _poll_polygon(self, client: httpx.AsyncClient, symbols: list[str]) -> None:
         now = datetime.now(UTC)
@@ -110,15 +156,15 @@ class EquityFeed:
             resp.raise_for_status()
             price = (resp.json().get("results") or {}).get("p")
             if price is not None:
-                await self._emit_tick(symbol, str(price), "polygon", now)
+                await self._emit_tick(symbol, "polygon", now, {"price": str(price)})
 
     async def _emit_tick(
-        self, instrument: str, price: str, venue: str, now: datetime
+        self, instrument: str, venue: str, now: datetime, payload: dict[str, str]
     ) -> None:
         await self._bus.publish(EventEnvelope(
             event_type=EventType.MARKET_TICK,
             source="equity_feed",
             event_time=now,
             ingest_time=now,
-            payload={"instrument": instrument, "venue": venue, "price": price},
+            payload={"instrument": instrument, "venue": venue, **payload},
         ))

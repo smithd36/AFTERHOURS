@@ -1,14 +1,21 @@
 import { useEffect, useRef } from "react";
 import type { EventEnvelope } from "@/types/core";
 
-const BACKFILL_TYPES = [
-  "signal.created",
-  "thesis.created",
-  "thesis.invalidated",
-  "decision.proposed",
-  "decision.approved",
-  "decision.rejected",
-].join(",");
+// Signals are fetched separately at the backend's max limit so high-volume
+// news doesn't crowd out (or get crowded out by) thesis/decision history.
+const BACKFILL_REQUESTS = [
+  { types: "signal.created", limit: 500 },
+  {
+    types: [
+      "thesis.created",
+      "thesis.invalidated",
+      "decision.proposed",
+      "decision.approved",
+      "decision.rejected",
+    ].join(","),
+    limit: 200,
+  },
+];
 
 /**
  * Hydrates panel state on mount by replaying recent events from the
@@ -23,17 +30,19 @@ export function useBackfill(onEnvelope: (envelope: EventEnvelope) => void): void
   useEffect(() => {
     let cancelled = false;
 
-    fetch(`/api/events/recent?types=${BACKFILL_TYPES}&limit=200`)
-      .then((r) => r.json())
-      .then((data: { events: EventEnvelope[] }) => {
-        if (cancelled) return;
-        for (const envelope of data.events ?? []) {
-          onEnvelopeRef.current(envelope);
-        }
-      })
-      .catch(() => {
-        // backfill is best-effort — live stream still populates panels
-      });
+    for (const { types, limit } of BACKFILL_REQUESTS) {
+      fetch(`/api/events/recent?types=${types}&limit=${limit}`)
+        .then((r) => r.json())
+        .then((data: { events: EventEnvelope[] }) => {
+          if (cancelled) return;
+          for (const envelope of data.events ?? []) {
+            onEnvelopeRef.current(envelope);
+          }
+        })
+        .catch(() => {
+          // backfill is best-effort — live stream still populates panels
+        });
+    }
 
     return () => {
       cancelled = true;

@@ -11,7 +11,9 @@ export interface SignalRow {
   receivedAt: number;        // Date.now() — used for ordering
 }
 
-const MAX_SIGNALS = 50;
+// Matches the backend /api/events/recent max limit — the panel scrolls, so the
+// cap only bounds memory, not layout.
+const MAX_SIGNALS = 500;
 
 interface SignalPayload {
   id: string;
@@ -117,7 +119,7 @@ export function useSignals(activeInstruments: ReadonlySet<string> | null): {
       const instrument = String(p.instrument ?? "");
       if (!instrument) return;
       // Backfill recent signals from the store for the newly watched instrument.
-      fetch("/api/events/recent?types=signal.created&limit=200")
+      fetch("/api/events/recent?types=signal.created&limit=500")
         .then((r) => r.json())
         .then((data: { events: EventEnvelope[] }) => {
           for (const ev of data.events ?? []) {

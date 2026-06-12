@@ -130,7 +130,7 @@ export function useDecisions(activeInstruments: ReadonlySet<string> | null): {
         const instrument = String(proposal.instrument ?? "");
         if (instrument && !active.has(instrument)) return;
       }
-      dispatch({ type: et as Action["type"], envelope });
+      dispatch({ type: et, envelope });
       return;
     }
 
