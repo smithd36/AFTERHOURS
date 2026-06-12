@@ -168,6 +168,22 @@ class RiskEngine:
             return (False, {},
                     ["insufficient_capital: portfolio too small to size a position"])
 
+        # Affordability gate. The position-pct cap is computed against
+        # total_value (cash + marked positions); after drawdowns that can exceed
+        # the cash on hand, and the executor deducts size_usd + fee from cash
+        # unconditionally — silently driving the ledger negative (meaningless
+        # leverage on paper, a real overdraft live). Bound the trade to the cash
+        # we hold, less a buffer for fees/slippage, and reject anything that no
+        # longer clears the minimum trade size. (PLANNING §2.4)
+        affordable = self._portfolio.cash * (
+            Decimal("1") - Decimal(str(self._settings.cash_buffer_pct))
+        )
+        size_usd = min(size_usd, affordable).quantize(Decimal("0.01"))
+        if size_usd < self._settings.min_trade_size_usd:
+            return (False, {},
+                    [f"insufficient_cash: affordable size ${size_usd} below minimum "
+                     f"${self._settings.min_trade_size_usd}"])
+
         # Stop price — mandatory. A position whose stop cannot be computed (no
         # tick data yet) would open unprotected and be skipped by the stop
         # monitor forever. Planning §6.3: never fail open into more risk, so a

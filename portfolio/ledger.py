@@ -138,6 +138,13 @@ class Portfolio:
         decision_id: str,
     ) -> None:
         self.cash -= cost_usd
+        # Defence in depth: the risk engine's affordability gate should keep this
+        # from ever happening. If cash still goes negative, a sizing/gate bug has
+        # let an unaffordable order through — surface it loudly rather than carry
+        # silent leverage on the book.
+        if self.cash < 0:
+            logger.error("portfolio.cash_negative", instrument=instrument,
+                         cash=str(self.cash), cost_usd=str(cost_usd))
         self.positions[instrument] = Position(
             instrument=instrument,
             side=side,

@@ -9,6 +9,7 @@ from uuid import uuid4
 import pytest
 
 from core.bus import InMemoryEventStore, InProcessBus
+from core.schemas.decision import Side
 from core.schemas.events import AutonomyMode, EventEnvelope, EventType
 from portfolio.ledger import Portfolio
 from risk.engine import RiskEngine
@@ -145,6 +146,69 @@ async def test_max_positions_rejected(bus: InProcessBus, portfolio: Portfolio) -
     assert len(rejected) == 1
     reasons = rejected[0].payload["risk"]["rejection_reasons"]
     assert any("max_open_positions" in r for r in reasons)
+
+    await engine.stop()
+
+
+async def test_low_cash_rejects_below_min_trade_size(
+    bus: InProcessBus, portfolio: Portfolio
+) -> None:
+    """When cash is nearly depleted, a trade that can't be afforded is rejected
+    rather than driving the ledger negative."""
+    from portfolio.models import Position
+
+    engine = RiskEngine(bus, portfolio, initial_mode=AutonomyMode.PAPER)
+    await engine.start()
+
+    # Simulate a book whose cash is almost gone but whose total_value (cash +
+    # marked positions) is still large enough for max_position_pct to size a
+    # trade well above the cash on hand.
+    portfolio.cash = Decimal("5.00")
+    portfolio.positions["ETH-USD"] = Position(
+        instrument="ETH-USD", side=Side.LONG, entry_price=Decimal("1000"),
+        quantity=Decimal("9"), current_price=Decimal("1000"),
+        stop_price=None, decision_id="seed",
+    )
+    await bus.publish(_tick_envelope("BTC-USD", "50000"))
+
+    rejected: list[EventEnvelope] = []
+    await bus.subscribe(EventType.DECISION_REJECTED, lambda e: rejected.append(e))
+
+    await bus.publish(_proposed_envelope("BTC-USD"))
+    assert len(rejected) == 1
+    reasons = rejected[0].payload["risk"]["rejection_reasons"]
+    assert any("insufficient_cash" in r for r in reasons)
+
+    await engine.stop()
+
+
+async def test_size_capped_at_affordable_cash(
+    bus: InProcessBus, portfolio: Portfolio
+) -> None:
+    """An approved size never exceeds the cash on hand, less the buffer, so the
+    ledger cannot go negative when the executor deducts size + fee."""
+    from portfolio.models import Position
+
+    engine = RiskEngine(bus, portfolio, initial_mode=AutonomyMode.PAPER)
+    await engine.start()
+
+    # total_value ~ $10k (so max_position_pct would size ~$500) but only $300
+    # cash on hand → the affordability cap must bind below the pct cap.
+    portfolio.cash = Decimal("300.00")
+    portfolio.positions["ETH-USD"] = Position(
+        instrument="ETH-USD", side=Side.LONG, entry_price=Decimal("1000"),
+        quantity=Decimal("9.7"), current_price=Decimal("1000"),
+        stop_price=None, decision_id="seed",
+    )
+    await bus.publish(_tick_envelope("BTC-USD", "50000"))
+
+    approved: list[EventEnvelope] = []
+    await bus.subscribe(EventType.DECISION_APPROVED, lambda e: approved.append(e))
+
+    await bus.publish(_proposed_envelope("BTC-USD"))
+    assert len(approved) == 1
+    size = Decimal(approved[0].payload["proposal"]["size_usd"])
+    assert size <= portfolio.cash  # affordable, with fee/slippage headroom to spare
 
     await engine.stop()
 
