@@ -123,7 +123,7 @@ class RiskEngine:
 
         # Daily loss circuit breaker
         if portfolio_value > 0:
-            daily_loss_pct = float(-self._portfolio.daily_realized_pnl / portfolio_value)
+            daily_loss_pct = float(-self._portfolio.daily_realized_pnl(now) / portfolio_value)
             if daily_loss_pct >= self._settings.max_daily_loss_pct:
                 await self._reject(decision_id, instrument, now, payload,
                                    [f"daily_loss_limit: {daily_loss_pct:.1%} >= "

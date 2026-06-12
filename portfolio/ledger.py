@@ -7,6 +7,7 @@ to keep unrealized P&L current. All arithmetic in Decimal.
 
 from __future__ import annotations
 
+from datetime import UTC, date, datetime
 from decimal import Decimal
 
 import structlog
@@ -30,8 +31,15 @@ class Portfolio:
 
         self.cash: Decimal = self._settings.initial_cash
         self.positions: dict[str, Position] = {}
-        self.daily_realized_pnl: Decimal = Decimal("0")
         self._prices: dict[str, Decimal] = {}
+
+        # Realized P&L for the current UTC trading day. Keyed on event time
+        # (not wall clock) so the breaker behaves identically under live trading
+        # and backtest replay. `_daily_date` is the UTC day the accumulator
+        # belongs to; it rolls over — and the accumulator resets — when a later
+        # event crosses into a new day.
+        self._daily_pnl: Decimal = Decimal("0")
+        self._daily_date: date | None = None
 
     async def start(self) -> None:
         self._fill_sub = await self._bus.subscribe(EventType.ORDER_FILLED, self._handle_fill)
@@ -66,12 +74,34 @@ class Portfolio:
     def current_price(self, instrument: str) -> Decimal | None:
         return self._prices.get(instrument)
 
+    def daily_realized_pnl(self, as_of: datetime) -> Decimal:
+        """Realized P&L for the UTC day containing `as_of` (event-time keyed).
+
+        Returns 0 once `as_of` has advanced past the day of the last recorded
+        close — the prior day's losses no longer count against the daily breaker.
+        Callers in financial logic must pass an event clock; display/ops callers
+        may pass the wall clock.
+        """
+        if self._daily_date is None or as_of.astimezone(UTC).date() > self._daily_date:
+            return Decimal("0")
+        return self._daily_pnl
+
+    def _rollover_if_new_day(self, as_of: datetime) -> None:
+        """Advance the daily accumulator to the UTC day of `as_of`, resetting it
+        to zero when the day changes."""
+        day = as_of.astimezone(UTC).date()
+        if self._daily_date is None:
+            self._daily_date = day
+        elif day > self._daily_date:
+            self._daily_date = day
+            self._daily_pnl = Decimal("0")
+
     def snapshot(self) -> dict[str, object]:
         return {
             "cash": str(self.cash),
             "total_value": str(self.total_value),
             "unrealized_pnl": str(self.unrealized_pnl),
-            "daily_realized_pnl": str(self.daily_realized_pnl),
+            "daily_realized_pnl": str(self.daily_realized_pnl(datetime.now(UTC))),
             "open_positions": len(self.positions),
             "positions": {
                 inst: {
@@ -115,8 +145,14 @@ class Portfolio:
         logger.info("portfolio.position_opened", instrument=instrument, side=side.value,
                     fill_price=str(fill_price), quantity=str(quantity))
 
-    def close_position(self, instrument: str, fill_price: Decimal, fee: Decimal) -> Decimal:
-        """Close an open position. Returns realized P&L (net of fees)."""
+    def close_position(
+        self, instrument: str, fill_price: Decimal, fee: Decimal, event_time: datetime
+    ) -> Decimal:
+        """Close an open position. Returns realized P&L (net of fees).
+
+        `event_time` is the venue/source clock of the closing fill; it drives the
+        UTC-day rollover of the daily realized-P&L accumulator (two-clock rule).
+        """
         position = self.positions.pop(instrument, None)
         if position is None:
             return Decimal("0")
@@ -130,7 +166,8 @@ class Portfolio:
             realized = cost_basis - proceeds - fee
             self.cash += cost_basis + (cost_basis - proceeds) - fee
 
-        self.daily_realized_pnl += realized
+        self._rollover_if_new_day(event_time)
+        self._daily_pnl += realized
         logger.info("portfolio.position_closed", instrument=instrument,
                     realized_pnl=str(realized), fill_price=str(fill_price))
         return realized
@@ -174,4 +211,4 @@ class Portfolio:
                 decision_id=decision_id,
             )
         elif action == "close":
-            self.close_position(instrument, fill_price, fee)
+            self.close_position(instrument, fill_price, fee, envelope.event_time)

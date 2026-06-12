@@ -34,11 +34,12 @@ def _fill_event(
     cost_usd: str,
     fee: str = "0",
     stop_price: str | None = None,
+    event_time: datetime | None = None,
 ) -> EventEnvelope:
     return EventEnvelope(
         event_type=EventType.ORDER_FILLED,
         source="test",
-        event_time=datetime.now(UTC),
+        event_time=event_time or datetime.now(UTC),
         ingest_time=datetime.now(UTC),
         payload={
             "instrument": instrument,
@@ -77,8 +78,33 @@ async def test_close_position_updates_cash(bus: InProcessBus, portfolio: Portfol
 
     assert "ETH-USD" not in portfolio.positions
     assert portfolio.open_position_count == 0
-    realized = portfolio.daily_realized_pnl
+    realized = portfolio.daily_realized_pnl(datetime.now(UTC))
     assert realized == Decimal("97.9")  # 2100 - 2000 - 2.1
+
+
+async def test_daily_pnl_resets_on_utc_day_rollover(
+    bus: InProcessBus, portfolio: Portfolio
+) -> None:
+    """A loss realized yesterday must not count against today's daily breaker."""
+    day1 = datetime(2026, 1, 1, 20, 0, tzinfo=UTC)
+    day2 = datetime(2026, 1, 2, 9, 0, tzinfo=UTC)
+
+    # Realize a loss on day 1: buy at 2000, sell at 1900 → -100.
+    await bus.publish(_fill_event("ETH-USD", "open", "long", "2000", "1", "2000",
+                                  event_time=day1))
+    await bus.publish(_fill_event("ETH-USD", "close", "long", "1900", "1", "0",
+                                  event_time=day1))
+    assert portfolio.daily_realized_pnl(day1) == Decimal("-100")
+
+    # Same loss, queried as-of day 2 → the breaker sees a clean slate.
+    assert portfolio.daily_realized_pnl(day2) == Decimal("0")
+
+    # A new close on day 2 accumulates only the day-2 realized P&L.
+    await bus.publish(_fill_event("BTC-USD", "open", "long", "100", "1", "100",
+                                  event_time=day2))
+    await bus.publish(_fill_event("BTC-USD", "close", "long", "110", "1", "0",
+                                  event_time=day2))
+    assert portfolio.daily_realized_pnl(day2) == Decimal("10")  # not 10 - 100
 
 
 async def test_tick_updates_current_price(bus: InProcessBus, portfolio: Portfolio) -> None:
