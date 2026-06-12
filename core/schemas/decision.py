@@ -140,11 +140,45 @@ class HumanAction(BaseModel):
     edits: Optional[dict[str, Any]] = None  # field-level diff for EDITED actions
 
 
+class Order(BaseModel):
+    """An execution intent derived from an approved Decision.
+
+    `client_order_id` is the idempotency key (PLANNING §2.5): deterministically
+    derived from the decision id and intent, so a re-delivered approval, a
+    restart replay, or a retried live submit all resolve to the *same* order.
+    The executor records submitted client_order_ids and rejects duplicates,
+    giving reliable fill attribution. Paper and live executors construct
+    identical Orders — only the fill mechanism differs — so introducing the
+    live adapter is an additive change, not a refactor of this flow.
+    """
+
+    client_order_id: str  # idempotency key; see make_client_order_id
+    decision_id: str
+    instrument: str
+    side: Side
+    order_type: OrderType
+    intent: Literal["open", "close"]  # opening vs. exiting the position
+    size_usd: Decimal
+    limit_price: Optional[Decimal] = None
+    created_at: datetime
+
+    @staticmethod
+    def make_client_order_id(decision_id: str, intent: Literal["open", "close"]) -> str:
+        """Deterministic idempotency key for an order under a decision.
+
+        There is one opening order and at most one closing order per decision,
+        so ``decision_id`` plus ``intent`` is a stable, collision-free key.
+        Human-readable by design for the audit log; a live adapter may hash
+        this if a venue constrains client-order-id length or charset.
+        """
+        return f"{decision_id}:{intent}"
+
+
 class Fill(BaseModel):
     """A single execution fill. Decisions may have multiple partial fills."""
 
     fill_id: str  # exchange-issued
-    order_id: str  # our idempotency key
+    order_id: str  # our idempotency key — the originating Order.client_order_id
     ts: datetime
     price: Decimal
     quantity: Decimal

@@ -21,7 +21,7 @@ import structlog
 
 from core.bus.base import Bus, Subscription
 from core.pricing import quantize_price
-from core.schemas.decision import Fill, HumanAction, HumanActionType, Side
+from core.schemas.decision import Fill, HumanAction, HumanActionType, Order, OrderType, Side
 from core.schemas.events import AutonomyMode, EventEnvelope, EventType
 from portfolio.ledger import Portfolio
 
@@ -79,6 +79,11 @@ class PaperExecutor:
 
         # ASSISTED mode: approved decisions pending human execution
         self._pending: dict[str, _ParkedDecision] = {}
+
+        # Idempotency (PLANNING §2.5): client_order_ids already submitted. A
+        # re-delivered approval or a double-triggered close maps to the same key
+        # and is rejected here rather than producing a duplicate fill.
+        self._submitted_orders: set[str] = set()
 
     async def start(self) -> None:
         self._approved_sub = await self._bus.subscribe(
@@ -225,6 +230,20 @@ class PaperExecutor:
         fee = fill_price * position.quantity * Decimal(str(self._settings.fee_pct))
 
         now = now or datetime.now(UTC)
+        order = Order(
+            client_order_id=Order.make_client_order_id(position.decision_id, "close"),
+            decision_id=position.decision_id,
+            instrument=instrument,
+            side=position.side,
+            order_type=OrderType.MARKET,
+            intent="close",
+            size_usd=fill_price * position.quantity,  # close notional
+            created_at=now,
+        )
+        if not await self._submit(order, now):
+            # Already closed under this client_order_id (e.g. a re-fired stop).
+            return False
+
         await self._bus.publish(EventEnvelope(
             event_type=EventType.ORDER_FILLED,
             source="paper_executor",
@@ -234,6 +253,7 @@ class PaperExecutor:
                 "instrument": instrument,
                 "action": "close",
                 "side": position.side.value,
+                "client_order_id": order.client_order_id,
                 "fill_price": str(fill_price),
                 "quantity": str(position.quantity),
                 "cost_usd": "0",
@@ -324,6 +344,31 @@ class PaperExecutor:
 
     # ------------------------------------------------------------------
 
+    async def _submit(self, order: Order, now: datetime) -> bool:
+        """Register an order for execution, enforcing idempotency.
+
+        Returns False if this ``client_order_id`` was already submitted (a
+        duplicate — e.g. a re-delivered approval or a double-fired close); the
+        caller must skip the fill. On first sight it records the key and emits
+        ``order.submitted``, completing the decision → order → fill chain. The
+        live adapter will submit to the venue at this same point.
+        """
+        if order.client_order_id in self._submitted_orders:
+            logger.warning("paper_executor.duplicate_order",
+                           client_order_id=order.client_order_id,
+                           decision_id=order.decision_id, intent=order.intent)
+            return False
+        self._submitted_orders.add(order.client_order_id)
+        await self._bus.publish(EventEnvelope(
+            event_type=EventType.ORDER_SUBMITTED,
+            source="paper_executor",
+            event_time=now,
+            ingest_time=datetime.now(UTC),
+            correlation_id=UUID(order.decision_id) if order.decision_id else None,
+            payload=order.model_dump(mode="json"),
+        ))
+        return True
+
     async def _fill(self, decision_payload: dict, now: datetime) -> None:
         instrument: str = decision_payload.get("proposal", {}).get("instrument", "")
         side_str: str = decision_payload.get("proposal", {}).get("side", "long")
@@ -338,6 +383,19 @@ class PaperExecutor:
         if not current_price:
             logger.warning("paper_executor.no_price", instrument=instrument)
             return
+
+        order = Order(
+            client_order_id=Order.make_client_order_id(decision_id, "open"),
+            decision_id=decision_id,
+            instrument=instrument,
+            side=Side(side_str),
+            order_type=OrderType.MARKET,
+            intent="open",
+            size_usd=size_usd,
+            created_at=now,
+        )
+        if not await self._submit(order, now):
+            return  # duplicate approval — already filled under this client_order_id
 
         slippage = Decimal(str(self._settings.slippage_pct))
         fill_price = (
@@ -357,8 +415,8 @@ class PaperExecutor:
             stop_price_str = str(risk["stop_price"])
 
         fill = Fill(
-            fill_id=str(uuid4()),
-            order_id=str(uuid4()),
+            fill_id=str(uuid4()),  # exchange-issued; simulated here
+            order_id=order.client_order_id,  # ties the fill to its idempotent Order
             ts=now,
             price=fill_price,
             quantity=quantity,
@@ -376,6 +434,7 @@ class PaperExecutor:
                 "instrument": instrument,
                 "action": "open",
                 "side": side_str,
+                "client_order_id": order.client_order_id,
                 "fill_price": str(fill_price),
                 "quantity": str(quantity),
                 "cost_usd": str(size_usd),

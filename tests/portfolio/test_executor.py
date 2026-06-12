@@ -115,6 +115,81 @@ async def test_sub_cent_fill_price_and_quantity(
     await executor.stop()
 
 
+async def test_open_carries_client_order_id_keyed_on_decision(
+    bus: InProcessBus, portfolio: Portfolio
+) -> None:
+    """The decision → order → fill chain carries a deterministic client_order_id."""
+    executor = PaperExecutor(bus, portfolio, initial_mode=AutonomyMode.PAPER)
+    await executor.start()
+
+    await bus.publish(_tick("BTC-USD", "50000"))
+    submitted: list[EventEnvelope] = []
+    fills: list[EventEnvelope] = []
+    await bus.subscribe(EventType.ORDER_SUBMITTED, lambda e: submitted.append(e))
+    await bus.subscribe(EventType.ORDER_FILLED, lambda e: fills.append(e))
+
+    env = _approved("BTC-USD", "500")
+    decision_id = env.payload["id"]
+    await bus.publish(env)
+
+    expected = f"{decision_id}:open"
+    assert len(submitted) == 1
+    assert submitted[0].payload["client_order_id"] == expected
+    assert submitted[0].payload["intent"] == "open"
+    assert len(fills) == 1
+    assert fills[0].payload["client_order_id"] == expected
+    # Fill ties back to its idempotent order.
+    assert fills[0].payload["fill"]["order_id"] == expected
+
+    await executor.stop()
+
+
+async def test_duplicate_approval_fills_once(
+    bus: InProcessBus, portfolio: Portfolio
+) -> None:
+    """A re-delivered approval (same decision id) must not produce a second fill."""
+    executor = PaperExecutor(bus, portfolio, initial_mode=AutonomyMode.PAPER)
+    await executor.start()
+
+    await bus.publish(_tick("BTC-USD", "50000"))
+    fills: list[EventEnvelope] = []
+    await bus.subscribe(EventType.ORDER_FILLED, lambda e: fills.append(e))
+
+    env = _approved("BTC-USD", "500")
+    await bus.publish(env)
+    await bus.publish(env)  # exact re-delivery — same client_order_id
+
+    assert len(fills) == 1  # idempotency rejected the duplicate
+
+    await executor.stop()
+
+
+async def test_close_carries_client_order_id(
+    bus: InProcessBus, portfolio: Portfolio
+) -> None:
+    """Closing fills carry a distinct close-intent client_order_id for attribution."""
+    executor = PaperExecutor(bus, portfolio, initial_mode=AutonomyMode.PAPER)
+    await executor.start()
+
+    await bus.publish(_tick("BTC-USD", "50000"))
+    env = _approved("BTC-USD", "500")
+    decision_id = env.payload["id"]
+    await bus.publish(env)
+
+    closes: list[EventEnvelope] = []
+    await bus.subscribe(
+        EventType.ORDER_FILLED,
+        lambda e: closes.append(e) if e.payload["action"] == "close" else None,
+    )
+
+    ok = await executor.close_position("BTC-USD")
+    assert ok is True
+    assert len(closes) == 1
+    assert closes[0].payload["client_order_id"] == f"{decision_id}:close"
+
+    await executor.stop()
+
+
 async def test_observe_mode_ignores(bus: InProcessBus, portfolio: Portfolio) -> None:
     executor = PaperExecutor(bus, portfolio, initial_mode=AutonomyMode.OBSERVE)
     await executor.start()
