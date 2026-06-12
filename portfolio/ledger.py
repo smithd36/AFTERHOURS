@@ -60,7 +60,12 @@ class Portfolio:
 
     @property
     def total_value(self) -> Decimal:
-        position_value = sum(p.current_value for p in self.positions.values())
+        # Equity contribution (margin + unrealized P&L), not raw market value, so
+        # a losing short reduces equity instead of inflating it (sign-blind
+        # market value would rise as a short loses).
+        position_value = sum(
+            (p.equity_contribution for p in self.positions.values()), Decimal("0")
+        )
         return self.cash + position_value
 
     @property

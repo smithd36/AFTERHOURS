@@ -127,3 +127,30 @@ async def test_total_value(bus: InProcessBus, portfolio: Portfolio) -> None:
     await bus.publish(_fill_event("BTC-USD", "open", "long", "50000", "0.01", "500"))
     # cash reduced by 500; position worth 500 → total unchanged
     assert portfolio.total_value == portfolio.cash + Decimal("500")
+
+
+async def test_losing_short_decreases_total_value(
+    bus: InProcessBus, portfolio: Portfolio
+) -> None:
+    """A short that loses (price rises) must *reduce* equity, not inflate it."""
+    initial = portfolio.cash  # 10_000
+
+    # Open a short: 1 unit at 2000, posting 2000 as margin.
+    await bus.publish(_fill_event("ETH-USD", "open", "short", "2000", "1", "2000"))
+    # No price move yet: margin + 0 P&L == cost basis, equity unchanged.
+    assert portfolio.total_value == initial
+
+    # Price rises to 2100 — a $100 loss for the short.
+    now = datetime.now(UTC)
+    await bus.publish(EventEnvelope(
+        event_type=EventType.MARKET_TICK,
+        source="test",
+        event_time=now,
+        ingest_time=now,
+        payload={"instrument": "ETH-USD", "price": "2100", "volume": "1"},
+    ))
+
+    # equity_contribution = 2000 margin + (2000 - 2100) P&L = 1900; cash = 8000.
+    assert portfolio.unrealized_pnl == Decimal("-100")
+    assert portfolio.total_value == Decimal("9900")
+    assert portfolio.total_value < initial  # the bug: this used to *rise* to 10100

@@ -21,11 +21,19 @@ class Position:
         return self.entry_price * self.quantity
 
     @property
-    def current_value(self) -> Decimal:
-        return self.current_price * self.quantity
-
-    @property
     def unrealized_pnl(self) -> Decimal:
         if self.side == Side.LONG:
             return (self.current_price - self.entry_price) * self.quantity
         return (self.entry_price - self.current_price) * self.quantity
+
+    @property
+    def equity_contribution(self) -> Decimal:
+        """This position's contribution to account equity: posted margin (the
+        cost basis, ``size_usd``) plus unrealized P&L.
+
+        For a long this equals raw market value (``current_price × quantity``);
+        for a short it correctly *decreases* as the price rises (a loss), unlike
+        sign-blind market value. Under the current full-margin model this is
+        ``size_usd + unrealized_pnl`` (= ``2·entry·qty − current·qty`` for a short).
+        """
+        return self.size_usd + self.unrealized_pnl
