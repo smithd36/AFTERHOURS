@@ -10,10 +10,11 @@ stale within a phase. They'll be added once the terminal layout freezes ahead
 of live trading (Phase 6).
 
 > **Scope:** Phases 0–5 are complete; pre-Phase-6 hardening's live-trading blockers are cleared
-> (all CRITICAL issues closed) and Phase 6 (live trading) is next, gated on gateway auth/bind
-> hardening. The only modes you
+> (all CRITICAL issues closed). Phase 6 (live trading) is next and is **staged 6A–6D**, starting
+> with **6A micro-capital validation** (Assisted-only real orders at $250–500 via Alpaca, gated on
+> gateway auth/bind hardening) — see `docs/phase-6-plan.md`. The only modes you
 > can run right now are **Observe**, **Paper**, and **Assisted**, and all fills
-> are simulated. There is **no live trading** — no real order ever reaches a
+> are simulated. There is **no live trading yet** — no real order ever reaches a
 > venue. Semi-auto, Supervised, and the live execution adapter are Phase 6 and
 > are documented here only as a boundary, not as features you can use.
 
@@ -257,11 +258,15 @@ any open positions manually if you want a flat book.
 
 So you don't go looking for them:
 
-- **Live trading.** No real orders. All fills are simulated. API keys are
+- **Live trading.** No real orders yet. All fills are simulated. API keys are
   read-only / withdrawal-disabled and Phases 0–5 use only public endpoints.
+  Live execution arrives in **Phase 6A** (Assisted-only, micro-capital, via
+  Alpaca — paper→live parity, then Kraken in 6B; ADR-009). The first real order is
+  gated on the gateway being authenticated and bound to localhost.
 - **Semi-auto and Supervised modes.** Defined in the model but not operable from
-  the terminal. They add bounded autonomous execution and broader limits — both
-  meaningful only once live execution exists.
+  the terminal. Semi-auto becomes operable in **Phase 6D** (bounded autonomous
+  execution); Supervised is Phase 7. Both are meaningful only once live execution
+  exists and has proven correct.
 
 Outcome resolution, calibration reporting, and the backtest harness itself are all
 live (Phase 4): replay a recorded event range with `python -m backtest` — see the

@@ -59,5 +59,5 @@ All other content of this ADR remains accurate.
 
 ## When to revisit
 
-- At Phase 6 kickoff: commit the live execution venue (Coinbase Advanced Trade vs Kraken) and revisit ADR-003 key permissioning for trade scope.
+- ~~At Phase 6 kickoff: commit the live execution venue (Coinbase Advanced Trade vs Kraken)~~ **Resolved 2026-06-12 by ADR-009: Alpaca primary + Kraken secondary; Coinbase Advanced Trade retired as the execution candidate (data feed only).** Revisit ADR-003 key permissioning for trade scope before live keys are loaded.
 - If Coinbase public-feed auth requirements change again, re-evaluate the secondary-feed posture.

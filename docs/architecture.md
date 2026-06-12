@@ -45,7 +45,7 @@ Market data feeds and signal generators. Feeds run as long-lived async tasks; si
 | `ingestion/equity/settings.py` | `EQUITY_FEED_PROVIDER`, `EQUITY_FEED_API_KEY`, `EQUITY_FEED_API_SECRET`, `EQUITY_POLL_INTERVAL_SECONDS` |
 | `ingestion/router.py` | `FeedRouter` — subscribes to `watchlist.instrument_added/removed`; routes each instrument to `KrakenFeed` (crypto) or `EquityFeed` (equity); bootstraps by subscribing all currently active instruments on startup |
 | `ingestion/pruner.py` | `TickPruner` — background task; deletes `market.tick` events older than `TICK_RETENTION_DAYS` every `TICK_PRUNE_INTERVAL_HOURS`; keeps SQLite growth bounded for large watchlists |
-| `ingestion/coinbase/feed.py` | **Secondary feed.** Coinbase Advanced Trade WebSocket (requires JWT auth — deferred to Phase 6) |
+| `ingestion/coinbase/feed.py` | **Secondary data feed only.** Coinbase Advanced Trade WebSocket (requires JWT auth — deferred to Phase 6). Not an execution venue: live execution is Alpaca + Kraken (ADR-009). |
 | `ingestion/coinbase/normalizer.py` | Raw Coinbase messages → `EventEnvelope(MARKET_TICK)` |
 | `ingestion/coinbase/settings.py` | `COINBASE_WS_URL`, `COINBASE_PRODUCTS`, `COINBASE_API_KEY` env config |
 | `ingestion/alerts/generator.py` | Subscribes to `market.tick`; emits `signal.created` for 24h crosses and short-window % moves; watchlist-gated |
@@ -416,6 +416,7 @@ Only **source topics** are replayed (`market.tick`, `signal.created`). Derived e
 
 | Subsystem | Phase | Notes |
 |---|---|---|
-| Live exchange adapter | 6 | Assisted mode only, micro sizes; execution venue re-confirmed at phase start (ADR-007) |
-| Scale & autonomy | 7 | Full equities adapter, semi-auto mode, correlation risk, Strategy Lab; Postgres migration path via `EventStore` / `WatchlistStore` protocol swap |
+| `BrokerAdapter` + live venues | 6A–6B | Venue-neutral ABC parallel to `PaperExecutor`, sharing the `Order`/`client_order_id` contract. **Alpaca** primary (paper→live parity, equities + crypto) in 6A; **Kraken** live crypto in 6B (ADR-009). Assisted mode only, micro sizes. Staged plan: `docs/phase-6-plan.md` |
+| Capital ramp & live semi-auto | 6C–6D | Stepwise size increases gated on clean reconciliation (6C); bounded autonomous execution on the Appendix B Assisted→Semi-auto gate (6D) |
+| Scale & autonomy | 7 | Full equities adapter, supervised-auto mode, correlation risk, Strategy Lab; Postgres migration path via `EventStore` / `WatchlistStore` protocol swap |
 | Harden & extend | 8 | Performance, service extraction, advanced observability, disaster recovery |
