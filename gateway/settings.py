@@ -20,3 +20,10 @@ class GatewaySettings(BaseSettings):
         default=["http://localhost:5173"],
         alias="CORS_ORIGINS",
     )
+    # Per-client outbound WebSocket buffer. Each connected browser gets its own
+    # bounded queue drained by a dedicated writer task; when a client can't keep
+    # up its queue fills and the *oldest* messages are dropped for that client
+    # only — a slow socket never back-pressures the event bus (and thus the
+    # Kraken dispatch loop / risk engine tick path). Sized for a burst of ticks;
+    # a client that falls this far behind is already showing stale data.
+    ws_client_queue_size: int = Field(default=512, alias="WS_CLIENT_QUEUE_SIZE")

@@ -318,6 +318,9 @@ def _register_routes(app: FastAPI) -> None:
             "status": "ok",
             "timestamp": datetime.now(UTC).isoformat(),
             "connected_clients": broadcaster.client_count,
+            # Non-zero and growing ⇒ a client can't keep up with the event rate;
+            # it sheds its own backlog rather than stalling the bus.
+            "dropped_messages": broadcaster.total_dropped,
         }
 
     @app.websocket("/ws")
