@@ -82,6 +82,36 @@ async def test_close_position_updates_cash(bus: InProcessBus, portfolio: Portfol
     assert realized == Decimal("97.9")  # 2100 - 2000 - 2.1
 
 
+async def test_realized_pnl_includes_entry_fee_long(
+    bus: InProcessBus, portfolio: Portfolio
+) -> None:
+    """A break-even exit must realize both fees, not just the close fee — the
+    entry fee was paid from cash at open and belongs in the cost basis."""
+    initial = portfolio.cash
+    # Open long: notional 1000 (100 x 10), entry fee 1.
+    await bus.publish(_fill_event("BTC-USD", "open", "long", "100", "10", "1000", fee="1"))
+    # Close at break-even price (100), close fee 1.
+    await bus.publish(_fill_event("BTC-USD", "close", "long", "100", "10", "0", fee="1"))
+
+    realized = portfolio.daily_realized_pnl(datetime.now(UTC))
+    assert realized == Decimal("-2")  # entry fee + close fee, not -1
+    # Conservation: realized P&L equals the net change in cash over the round trip.
+    assert portfolio.cash - initial == realized
+
+
+async def test_realized_pnl_includes_entry_fee_short(
+    bus: InProcessBus, portfolio: Portfolio
+) -> None:
+    """The short leg must book the entry fee into realized P&L too."""
+    initial = portfolio.cash
+    await bus.publish(_fill_event("ETH-USD", "open", "short", "100", "10", "1000", fee="1"))
+    await bus.publish(_fill_event("ETH-USD", "close", "short", "100", "10", "0", fee="1"))
+
+    realized = portfolio.daily_realized_pnl(datetime.now(UTC))
+    assert realized == Decimal("-2")
+    assert portfolio.cash - initial == realized
+
+
 async def test_daily_pnl_resets_on_utc_day_rollover(
     bus: InProcessBus, portfolio: Portfolio
 ) -> None:

@@ -163,17 +163,21 @@ class Portfolio:
         fill_price: Decimal,
         quantity: Decimal,
         cost_usd: Decimal,
+        entry_fee: Decimal,
         stop_price: Decimal | None,
         decision_id: str,
     ) -> None:
-        self.cash -= cost_usd
+        # cost_usd is the position notional; the entry fee is a separate cash
+        # outflow that must also be booked into realized P&L at close (it is
+        # stored on the Position, not just netted out of cash here).
+        self.cash -= cost_usd + entry_fee
         # Defence in depth: the risk engine's affordability gate should keep this
         # from ever happening. If cash still goes negative, a sizing/gate bug has
         # let an unaffordable order through — surface it loudly rather than carry
         # silent leverage on the book.
         if self.cash < 0:
             logger.error("portfolio.cash_negative", instrument=instrument,
-                         cash=str(self.cash), cost_usd=str(cost_usd))
+                         cash=str(self.cash), cost_usd=str(cost_usd), entry_fee=str(entry_fee))
         self.positions[instrument] = Position(
             instrument=instrument,
             side=side,
@@ -181,10 +185,11 @@ class Portfolio:
             quantity=quantity,
             current_price=fill_price,
             stop_price=stop_price,
+            entry_fee=entry_fee,
             decision_id=decision_id,
         )
         logger.info("portfolio.position_opened", instrument=instrument, side=side.value,
-                    fill_price=str(fill_price), quantity=str(quantity))
+                    fill_price=str(fill_price), quantity=str(quantity), entry_fee=str(entry_fee))
 
     def close_position(
         self, instrument: str, fill_price: Decimal, fee: Decimal, event_time: datetime
@@ -200,11 +205,17 @@ class Portfolio:
 
         proceeds = fill_price * position.quantity
         cost_basis = position.entry_price * position.quantity
+        # Both legs' fees reduce realized P&L: the close fee charged now and the
+        # entry fee paid (and already deducted from cash) when the position was
+        # opened. Omitting the entry fee overstates P&L — a break-even exit would
+        # read as a small profit instead of the two fees actually paid. Cash is
+        # unaffected here: the entry fee left the book at open.
+        total_fees = fee + position.entry_fee
         if position.side == Side.LONG:
-            realized = proceeds - cost_basis - fee
+            realized = proceeds - cost_basis - total_fees
             self.cash += proceeds - fee
         else:
-            realized = cost_basis - proceeds - fee
+            realized = cost_basis - proceeds - total_fees
             self.cash += cost_basis + (cost_basis - proceeds) - fee
 
         self._rollover_if_new_day(event_time)
@@ -247,7 +258,8 @@ class Portfolio:
                 side=Side(side_str),
                 fill_price=fill_price,
                 quantity=quantity,
-                cost_usd=cost_usd + fee,
+                cost_usd=cost_usd,
+                entry_fee=fee,
                 stop_price=stop_price,
                 decision_id=decision_id,
             )

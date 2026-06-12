@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 from decimal import Decimal
 
 from core.schemas.decision import Side
@@ -14,6 +14,7 @@ class Position:
     quantity: Decimal          # units of base asset
     current_price: Decimal
     stop_price: Decimal | None = None
+    entry_fee: Decimal = Decimal("0")   # fee paid on open; booked into realized P&L at close
     decision_id: str = ""
 
     @property
