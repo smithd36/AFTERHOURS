@@ -9,8 +9,9 @@ It is deliberately text-first. The UI is still moving; screenshots would be
 stale within a phase. They'll be added once the terminal layout freezes ahead
 of live trading (Phase 6).
 
-> **Scope:** Phases 0–5 are complete; pre-Phase-6 hardening is in progress and Phase 6 (live
-> trading) is next. The only modes you
+> **Scope:** Phases 0–5 are complete; pre-Phase-6 hardening's live-trading blockers are cleared
+> (all CRITICAL issues closed) and Phase 6 (live trading) is next, gated on gateway auth/bind
+> hardening. The only modes you
 > can run right now are **Observe**, **Paper**, and **Assisted**, and all fills
 > are simulated. There is **no live trading** — no real order ever reaches a
 > venue. Semi-auto, Supervised, and the live execution adapter are Phase 6 and

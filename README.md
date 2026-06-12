@@ -38,13 +38,16 @@ WatchlistPanel (add/remove instruments at runtime; live feed-status indicator pe
 LLM provider is pluggable: Groq · Mistral · OpenRouter (free) or Anthropic · OpenAI · Ollama.
 Backtest CLI: `python -m backtest [--from DATE] [--to DATE] [--llm replay|live]`.
 
-**Pre-Phase-6 hardening (in progress):** the paper system is being hardened to live-trading
-standards before any real order — a single `ModeController` owns the autonomy mode, the kill
-switch expires pending decisions, the portfolio and decision store rehydrate from the event log
-on restart, ledger accounting is corrected (entry-fee P&L, short equity, daily-loss rollover,
-affordability), decision→order→fill carries a deterministic client order ID, prices quantize
-magnitude-aware (sub-cent safe), and LLM output is schema-validated before publish. Tracked in
-[`docs/pre-phase-6-issues.md`](docs/pre-phase-6-issues.md) (review: `docs/pre-phase6-review.md`).
+**Pre-Phase-6 hardening (blockers cleared, 2026-06-12):** the paper system has been hardened to
+live-trading standards before any real order — a single `ModeController` owns the autonomy mode,
+the kill switch expires pending decisions, the portfolio and decision store rehydrate from the
+event log on restart, ledger accounting is corrected (entry-fee P&L, short equity, daily-loss
+rollover, affordability), decision→order→fill carries a deterministic client order ID, prices
+quantize magnitude-aware (sub-cent safe), and LLM output is schema-validated before publish. All
+7 CRITICAL phase-6-blocker issues and the IMPORTANT correctness/durability issues are closed;
+remaining before live keys are gateway authentication + bind hardening and a few non-blocking
+hygiene cleanups. Tracked in [`docs/pre-phase-6-issues.md`](docs/pre-phase-6-issues.md) (review:
+`docs/pre-phase6-review.md`).
 
 ---
 
