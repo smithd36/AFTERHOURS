@@ -1,5 +1,5 @@
 # =============================================================================
-# AFTERHOURS — .gitignore
+# AFTERHOURS — .graphifyignore
 # =============================================================================
 
 # ---------------------------------------------------------------------------
@@ -140,12 +140,9 @@ PRODUCT.md
 docs/pre-phase6-review.md
 docs/pre-phase-6-issues.md
 SESSION-HANDOFF.md
-graphify-out/*.json
-graphify-out/*.txt
-graphify-out/*.py
-graphify-out/*.json
-graphify-out/cache/
-graphify-out/.graphify_python
+graphify-out/
+contributing.md
+license
 
 # TypeScript incremental build state (tsc -b)
 *.tsbuildinfo
