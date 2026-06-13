@@ -21,7 +21,17 @@ _SCHEMA = """\
   "confidence": <float 0.0-1.0>,
   "invalidation_conditions": ["<plain-language condition>", "..."],
   "time_horizon_hours": <integer>
-}"""
+}
+
+confidence is a CALIBRATED PROBABILITY — the fraction of identical setups that would be correct.
+  0.50 = coin flip, signals are contradictory or too weak to act on
+  0.55 = slight edge, one weak signal points this way
+  0.60 = modest conviction, one clear signal or two weak ones agree
+  0.65 = good conviction, multiple signals align
+  0.70 = strong conviction, several independent signals clearly agree
+  0.75+ = very high conviction, reserve for setups where essentially all signals align strongly
+Do NOT default to 0.70. If you are uncertain, use 0.50–0.60. Only use 0.75+ when you can cite
+multiple independent sources that all point the same direction with no contradicting signals."""
 
 
 def build_thesis_messages(

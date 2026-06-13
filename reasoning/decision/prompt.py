@@ -24,7 +24,24 @@ _SCHEMA = """\
     {"signal_id": "<uuid from the list above>", "summary": "<one sentence>", "stance": "<supporting|contradicting>"}
   ],
   "confidence": <float 0.0-1.0>
-}"""
+}
+
+confidence is a CALIBRATED PROBABILITY — not a conviction score. It must be YOUR independent
+assessment of the probability this trade wins at the chosen horizon. The thesis confidence is
+a starting point; adjust it based on the quality and quantity of supporting evidence you cite.
+  0.50 = coin flip  |  0.55 = slight edge  |  0.60 = modest  |  0.65 = good  |  0.70 = strong
+  0.75+ = very strong — only when multiple independent signals clearly agree with no contradictions
+Do NOT echo the thesis confidence. Do NOT default to 0.70. Lower confidence when evidence is thin.
+
+time_horizon guidance:
+  intraday — use for crypto or when the catalyst resolves within hours (e.g. an intraday technical
+             breakout, a same-session options expiry, a live economic release). Do NOT use intraday
+             for equity instruments driven by news/analyst coverage/fundamental signals — those take
+             days to price in.
+  swing    — use for equity instruments where the thesis is news-driven, sentiment-driven, or based
+             on signals that take 1-5 trading days to resolve. This is the DEFAULT for equities
+             unless the catalyst is explicitly intraday (same-session earnings, macro data, etc.).
+  position — use when the thesis requires weeks to play out (macro regime shift, multi-week trend)."""
 
 
 def build_decision_messages(
