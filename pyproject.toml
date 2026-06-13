@@ -37,6 +37,7 @@ dependencies = [
     # --- utilities ---
     "python-dotenv>=1.0",
     "tenacity>=9.0",              # retry / backoff for feed reconnects
+    "tzdata>=2024.1",             # IANA tz database for zoneinfo on Windows
 ]
 
 [project.optional-dependencies]

@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { cn } from "@/lib/utils";
 import { CalibrationPanel } from "@/components/panels/CalibrationPanel";
 import { DecisionQueue } from "@/components/panels/DecisionQueue";
@@ -25,6 +25,66 @@ const MODE_STYLES: Record<AutonomyMode, string> = {
   paper: "border-bullish bg-bullish/10 text-bullish",
   assisted: "border-yellow-500 bg-yellow-500/10 text-yellow-500",
 };
+
+const _ET_TIME_FMT = new Intl.DateTimeFormat("en-US", {
+  timeZone: "America/New_York",
+  hour: "2-digit",
+  minute: "2-digit",
+  second: "2-digit",
+  hour12: false,
+});
+
+function _isNyseOpen(d: Date): boolean {
+  const parts = new Intl.DateTimeFormat("en-US", {
+    timeZone: "America/New_York",
+    weekday: "short",
+    hour: "numeric",
+    minute: "numeric",
+    hour12: false,
+  }).formatToParts(d);
+  const get = (type: string) => parts.find((p) => p.type === type)?.value ?? "";
+  const dow = get("weekday");
+  if (dow === "Sat" || dow === "Sun") return false;
+  const h = parseInt(get("hour"), 10);
+  const m = parseInt(get("minute"), 10);
+  const mins = h * 60 + m;
+  return mins >= 9 * 60 + 30 && mins < 16 * 60;
+}
+
+function MarketClock() {
+  const [now, setNow] = useState(() => new Date());
+  const rafRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  useEffect(() => {
+    const tick = () => {
+      setNow(new Date());
+      // align to the next whole second
+      rafRef.current = setTimeout(tick, 1000 - (Date.now() % 1000));
+    };
+    rafRef.current = setTimeout(tick, 1000 - (Date.now() % 1000));
+    return () => { if (rafRef.current) clearTimeout(rafRef.current); };
+  }, []);
+
+  const open = _isNyseOpen(now);
+  const timeStr = _ET_TIME_FMT.format(now);
+
+  return (
+    <div className="flex items-center gap-1.5">
+      <span
+        className={cn(
+          "inline-block h-1.5 w-1.5 rounded-full",
+          open ? "bg-bullish" : "bg-muted-foreground/50",
+        )}
+      />
+      <span className="font-mono text-[10px] uppercase tracking-widest text-muted-foreground">
+        {timeStr} ET&nbsp;·&nbsp;
+        <span className={open ? "text-bullish" : "text-muted-foreground/60"}>
+          {open ? "open" : "closed"}
+        </span>
+      </span>
+    </div>
+  );
+}
 
 function ConnectionPip({ connected }: { connected: boolean }) {
   return (
@@ -180,6 +240,7 @@ export default function App() {
         <div className="flex items-center gap-3">
           <ModeIndicator mode={mode} onChange={handleModeChange} />
           <HaltButton onHalt={handleHalt} pulsing={mode === "assisted"} />
+          <MarketClock />
           <ConnectionPip connected={connected} />
         </div>
       </header>

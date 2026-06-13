@@ -19,9 +19,10 @@ subscribe()/unsubscribe() interface and market.tick envelope are stable.
 from __future__ import annotations
 
 import asyncio
-from datetime import UTC, datetime
+from datetime import UTC, datetime, timedelta
 from decimal import Decimal, InvalidOperation
 from typing import Any
+from zoneinfo import ZoneInfo
 
 import httpx
 import structlog
@@ -32,6 +33,30 @@ from core.schemas.events import EventEnvelope, EventType
 from .settings import EquityFeedSettings
 
 logger = structlog.get_logger(__name__)
+
+_EASTERN = ZoneInfo("America/New_York")
+_MARKET_OPEN = (9, 30)
+_MARKET_CLOSE = (16, 0)
+
+
+def _is_market_open() -> bool:
+    now_et = datetime.now(_EASTERN)
+    if now_et.weekday() >= 5:  # Saturday=5, Sunday=6
+        return False
+    t = (now_et.hour, now_et.minute)
+    return _MARKET_OPEN <= t < _MARKET_CLOSE
+
+
+def _seconds_until_open() -> float:
+    """Seconds until the next NYSE open (9:30 ET on a weekday)."""
+    now_et = datetime.now(_EASTERN)
+    candidate = now_et.replace(hour=9, minute=30, second=0, microsecond=0)
+    if candidate <= now_et:
+        candidate += timedelta(days=1)
+    while candidate.weekday() >= 5:
+        candidate += timedelta(days=1)
+    return (candidate - now_et).total_seconds()
+
 
 _ALPACA_SNAPSHOT_URL = "https://data.alpaca.markets/v2/stocks/snapshots"
 _POLYGON_LAST_TRADE_URL = "https://api.polygon.io/v2/last/trade/{symbol}"
@@ -109,9 +134,14 @@ class EquityFeed:
 
         logger.info("equity_feed.starting", provider=self._settings.provider)
         while True:
-            await asyncio.sleep(self._settings.poll_interval_seconds)
+            if not _is_market_open():
+                secs = _seconds_until_open()
+                logger.info("equity_feed.market_closed", next_open_seconds=round(secs))
+                await asyncio.sleep(secs)
+                continue
             if self._instruments:
                 await self._poll()
+            await asyncio.sleep(self._settings.poll_interval_seconds)
 
     # ------------------------------------------------------------------
     # Internal
@@ -143,8 +173,16 @@ class EquityFeed:
         now = datetime.now(UTC)
         for symbol, snapshot in resp.json().items():
             payload = alpaca_snapshot_to_payload(snapshot)
-            if payload is not None:
-                await self._emit_tick(symbol, "alpaca", now, payload)
+            if payload is None:
+                continue
+            # Use venue trade timestamp as event_time (two-clock rule).
+            # Fall back to ingest wall-clock only when the field is absent.
+            trade_ts_raw = (snapshot.get("latestTrade") or {}).get("t")
+            try:
+                event_time = datetime.fromisoformat(trade_ts_raw) if trade_ts_raw else now
+            except (ValueError, TypeError):
+                event_time = now
+            await self._emit_tick(symbol, "alpaca", event_time, payload)
 
     async def _poll_polygon(self, client: httpx.AsyncClient, symbols: list[str]) -> None:
         now = datetime.now(UTC)
