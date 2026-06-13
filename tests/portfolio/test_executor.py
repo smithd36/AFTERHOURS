@@ -171,6 +171,59 @@ async def test_close_carries_client_order_id(
     await executor.stop()
 
 
+def _thesis_invalidated(
+    instrument: str, reason: str = "expired", event_time: datetime | None = None
+) -> EventEnvelope:
+    return EventEnvelope(
+        event_type=EventType.THESIS_INVALIDATED,
+        source="test",
+        event_time=event_time or datetime.now(UTC),
+        ingest_time=datetime.now(UTC),
+        payload={"thesis_id": str(uuid4()), "reason": reason, "instrument": instrument},
+    )
+
+
+async def test_thesis_invalidation_closes_position(
+    bus: InProcessBus, portfolio: Portfolio
+) -> None:
+    """An expired/invalidated thesis flattens the instrument's open position."""
+    executor = PaperExecutor(bus, portfolio, initial_mode=AutonomyMode.PAPER)
+    await executor.start()
+
+    await bus.publish(_tick("BTC-USD", "50000"))
+    await bus.publish(_approved("BTC-USD", "500"))
+    assert "BTC-USD" in portfolio.positions
+
+    closes: list[EventEnvelope] = []
+    await bus.subscribe(
+        EventType.ORDER_FILLED,
+        lambda e: closes.append(e) if e.payload["action"] == "close" else None,
+    )
+
+    await bus.publish(_thesis_invalidated("BTC-USD"))
+    assert "BTC-USD" not in portfolio.positions
+    assert len(closes) == 1
+    assert closes[0].payload["action"] == "close"
+
+    await executor.stop()
+
+
+async def test_thesis_invalidation_no_position_is_noop(
+    bus: InProcessBus, portfolio: Portfolio
+) -> None:
+    """Invalidating a thesis for an instrument we don't hold emits no fill."""
+    executor = PaperExecutor(bus, portfolio, initial_mode=AutonomyMode.PAPER)
+    await executor.start()
+
+    fills: list[EventEnvelope] = []
+    await bus.subscribe(EventType.ORDER_FILLED, lambda e: fills.append(e))
+
+    await bus.publish(_thesis_invalidated("ETH-USD"))
+    assert fills == []
+
+    await executor.stop()
+
+
 async def test_observe_mode_ignores(bus: InProcessBus, portfolio: Portfolio) -> None:
     executor = PaperExecutor(bus, portfolio, initial_mode=AutonomyMode.OBSERVE)
     await executor.start()

@@ -79,6 +79,7 @@ class PaperExecutor:
         self._validator = validator
         self._approved_sub: Subscription | None = None
         self._stop_sub: Subscription | None = None
+        self._invalidated_sub: Subscription | None = None
         self._mode_sub: Subscription | None = None
         self._halt_sub: Subscription | None = None
         self._tick_sub: Subscription | None = None
@@ -97,6 +98,14 @@ class PaperExecutor:
         )
         self._stop_sub = await self._bus.subscribe(
             EventType.RISK_LIMIT_BREACHED, self._handle_stop
+        )
+        # A thesis is the reason a position exists; when it expires (or is
+        # otherwise invalidated) the entry rationale is gone, so flatten the
+        # position instead of leaving it to run untethered to its stop. Without
+        # this, positions whose stop never trips accumulate forever and
+        # reappear on every restart (rehydrated from their never-closed fill).
+        self._invalidated_sub = await self._bus.subscribe(
+            EventType.THESIS_INVALIDATED, self._handle_thesis_invalidated
         )
         self._mode_sub = await self._bus.subscribe(
             EventType.SYSTEM_MODE_CHANGED, self._handle_mode_change
@@ -117,12 +126,13 @@ class PaperExecutor:
         # Don't silently drop parked decisions on shutdown/restart — expire them
         # with an audited event so the queue is never lost without a trace.
         await self._expire_pending("shutdown", datetime.now(UTC))
-        for sub in (self._approved_sub, self._stop_sub, self._mode_sub,
-                    self._halt_sub, self._tick_sub):
+        for sub in (self._approved_sub, self._stop_sub, self._invalidated_sub,
+                    self._mode_sub, self._halt_sub, self._tick_sub):
             if sub is not None:
                 await self._bus.unsubscribe(sub)
         self._approved_sub = None
         self._stop_sub = None
+        self._invalidated_sub = None
         self._mode_sub = None
         self._halt_sub = None
         self._tick_sub = None
@@ -348,6 +358,20 @@ class PaperExecutor:
         instrument: str = envelope.payload.get("instrument", "")
         if instrument:
             await self.close_position(instrument, now=envelope.event_time)
+
+    async def _handle_thesis_invalidated(self, envelope: EventEnvelope) -> None:
+        # Flatten the instrument's open position when its thesis dies. Closing by
+        # instrument matches the stop-loss and manual-close paths (the book holds
+        # at most one position per instrument). close_position is a no-op if
+        # nothing is open or no price is available, so an invalidation for an
+        # instrument we don't hold — or a re-fired one — is harmless.
+        instrument: str = envelope.payload.get("instrument", "")
+        if not instrument or instrument not in self._portfolio.positions:
+            return
+        closed = await self.close_position(instrument, now=envelope.event_time)
+        if closed:
+            logger.info("paper_executor.closed_on_invalidation", instrument=instrument,
+                        reason=envelope.payload.get("reason", ""))
 
     # ------------------------------------------------------------------
 

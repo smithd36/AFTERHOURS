@@ -77,11 +77,23 @@ class Portfolio:
         entry price as ``current_price`` until the first live tick refreshes it.
         """
         count = 0
+        skipped = 0
         for envelope in fills:
-            await self._handle_fill(envelope)
-            count += 1
-        logger.info("portfolio.rehydrated", fills=count, cash=str(self.cash),
-                    open_positions=len(self.positions))
+            # A single malformed/legacy fill (e.g. a pre-#13 event persisted
+            # before LLM output was schema-validated, carrying side="none")
+            # must not abort startup and silently reset the paper book to
+            # initial_cash. Skip it and keep replaying the rest.
+            try:
+                await self._handle_fill(envelope)
+                count += 1
+            except (ValueError, KeyError, ArithmeticError) as exc:
+                skipped += 1
+                logger.warning("portfolio.rehydrate.skipped_fill",
+                               event_id=str(envelope.id),
+                               instrument=envelope.payload.get("instrument"),
+                               error=str(exc))
+        logger.info("portfolio.rehydrated", fills=count, skipped=skipped,
+                    cash=str(self.cash), open_positions=len(self.positions))
 
     # ------------------------------------------------------------------
     # Queries (used by risk engine and API routes)

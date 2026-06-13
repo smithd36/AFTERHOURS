@@ -19,6 +19,7 @@ secrets/
 # ---------------------------------------------------------------------------
 *.db
 *.bak
+*.db*
 *.sqlite
 *.sqlite3
 # SQLite WAL, rollback journal, and shared-memory sidecar files

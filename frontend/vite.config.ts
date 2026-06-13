@@ -11,9 +11,13 @@ export default defineConfig({
     },
   },
   server: {
+    host: true,
     port: 5173,
+    allowedHosts: [
+      "afterhours.local",
+      "localhost",
+    ],
     proxy: {
-      // Forward API + WebSocket calls to the Python gateway during dev
       "/api": "http://localhost:8000",
       "/ws": {
         target: "ws://localhost:8000",
