@@ -1,3 +1,4 @@
+import { useMemo } from "react";
 import { cn } from "@/lib/utils";
 import { PanelShell } from "@/components/layout/PanelShell";
 import type {
@@ -24,7 +25,7 @@ function ReliabilityRow({ bucket }: { bucket: CalibrationBucket }) {
   const conf = bucket.avg_confidence ?? 0;
   const hit = bucket.hit_rate ?? 0;
   return (
-    <div className="flex items-center gap-2 text-[10px]">
+    <div className="flex items-center gap-2 text-[11px]">
       <span className="w-14 shrink-0 font-mono text-muted-foreground">
         {bucket.lo.toFixed(1)}–{bucket.hi.toFixed(1)}
       </span>
@@ -56,7 +57,7 @@ function GateCard({ title, gate }: { title: string; gate: GateStatus }) {
         <span className="font-semibold">{title}</span>
         <span
           className={cn(
-            "inline-block rounded px-1.5 py-0.5 text-[9px] font-bold uppercase tracking-wider",
+            "inline-block rounded px-1.5 py-0.5 text-[10px] font-bold uppercase tracking-wider",
             gate.ready ? "bg-bullish/20 text-bullish" : "bg-muted text-muted-foreground",
           )}
         >
@@ -65,7 +66,7 @@ function GateCard({ title, gate }: { title: string; gate: GateStatus }) {
       </div>
       <div className="mt-1.5 space-y-0.5">
         {gate.criteria.map((c) => (
-          <div key={c.name} className="flex items-center justify-between text-[10px]">
+          <div key={c.name} className="flex items-center justify-between text-[11px]">
             <span className={c.passed ? "text-bullish" : "text-muted-foreground"}>
               {c.passed ? "✓" : "·"} {c.name.replaceAll("_", " ")}
             </span>
@@ -76,7 +77,7 @@ function GateCard({ title, gate }: { title: string; gate: GateStatus }) {
         ))}
       </div>
       {gate.deferred.length > 0 && (
-        <p className="mt-1.5 text-[9px] leading-relaxed text-muted-foreground/70">
+        <p className="mt-1.5 text-[10px] leading-relaxed text-muted-foreground/70">
           deferred: {gate.deferred.join(" · ")}
         </p>
       )}
@@ -86,10 +87,14 @@ function GateCard({ title, gate }: { title: string; gate: GateStatus }) {
 
 export function CalibrationPanel({ report, gates }: Props) {
   const stats = report?.overall ?? null;
-  const nonEmptyBuckets = stats?.buckets.filter((b) => b.n > 0) ?? [];
-  const modeCounts = report
-    ? Object.entries(report.by_mode).map(([mode, s]) => `${mode} ${s.n}`)
-    : [];
+  const nonEmptyBuckets = useMemo(
+    () => stats?.buckets.filter((b) => b.n > 0) ?? [],
+    [stats],
+  );
+  const modeCounts = useMemo(
+    () => (report ? Object.entries(report.by_mode).map(([mode, s]) => `${mode} ${s.n}`) : []),
+    [report],
+  );
 
   return (
     <PanelShell
@@ -99,7 +104,12 @@ export function CalibrationPanel({ report, gates }: Props) {
       <div className="max-h-[32rem] overflow-y-auto space-y-3 p-3">
         {/* Headline ECE */}
         <div className="flex items-baseline justify-between rounded-sm bg-muted/60 p-2">
-          <span className="text-xs text-muted-foreground">ECE</span>
+          <span
+            className="text-xs text-muted-foreground"
+            title="Expected Calibration Error — measures how well stated confidence matches actual outcomes. ≤0.12 clears all gates · ≤0.18 clears Observe→Paper · >0.18 clears no gates"
+          >
+            ECE
+          </span>
           {stats && stats.ece !== null ? (
             <span className={cn("font-mono text-lg font-semibold", eceColor(stats.ece))}>
               {stats.ece.toFixed(4)}
@@ -110,13 +120,13 @@ export function CalibrationPanel({ report, gates }: Props) {
         </div>
 
         {modeCounts.length > 0 && (
-          <p className="text-[10px] text-muted-foreground">by mode: {modeCounts.join(" · ")}</p>
+          <p className="text-[11px] text-muted-foreground">by mode: {modeCounts.join(" · ")}</p>
         )}
 
         {/* Reliability bars */}
         {nonEmptyBuckets.length > 0 ? (
           <div className="space-y-1">
-            <p className="text-[10px] font-semibold uppercase tracking-wider text-muted-foreground">
+            <p className="text-[11px] font-semibold uppercase tracking-wider text-muted-foreground">
               Reliability (bar = hit rate, tick = confidence)
             </p>
             {nonEmptyBuckets.map((b) => (
@@ -125,18 +135,26 @@ export function CalibrationPanel({ report, gates }: Props) {
           </div>
         ) : (
           <p className="py-2 text-center text-[11px] text-muted-foreground">
-            Awaiting resolved decisions
+            awaiting resolved decisions…
           </p>
         )}
 
-        {/* Graduation gates */}
+        {/* Graduation gates — only show detail once decisions have resolved */}
         {gates && (
           <div className="space-y-2">
-            <p className="text-[10px] font-semibold uppercase tracking-wider text-muted-foreground">
+            <p className="text-[11px] font-semibold uppercase tracking-wider text-muted-foreground">
               AUTONOMY GATES
             </p>
-            <GateCard title="Observe → Paper" gate={gates.observe_to_paper} />
-            <GateCard title="Paper → Assisted" gate={gates.paper_to_assisted} />
+            {stats && stats.n > 0 ? (
+              <>
+                <GateCard title="Observe → Paper" gate={gates.observe_to_paper} />
+                <GateCard title="Paper → Assisted" gate={gates.paper_to_assisted} />
+              </>
+            ) : (
+              <p className="py-1 text-center text-[11px] text-muted-foreground">
+                gates unlock after first resolved decision
+              </p>
+            )}
           </div>
         )}
       </div>

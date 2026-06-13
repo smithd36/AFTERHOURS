@@ -36,7 +36,7 @@ function SignalItem({ row }: { row: SignalRow }) {
       {/* Type badge */}
       <span
         className={cn(
-          "mt-px shrink-0 rounded-sm px-1 py-0.5 text-[9px] font-semibold uppercase tracking-wider",
+          "mt-px shrink-0 rounded-sm px-1 py-0.5 text-[10px] font-semibold uppercase tracking-wider",
           variant === "price"
             ? "bg-warning/15 text-warning"
             : "bg-info/15 text-info",
@@ -48,20 +48,20 @@ function SignalItem({ row }: { row: SignalRow }) {
       {/* Content */}
       <div className="min-w-0 flex-1">
         {row.instruments.length > 0 && (
-          <span className="mr-1.5 text-[10px] font-medium text-muted-foreground">
+          <span className="mr-1.5 text-[11px] font-medium text-muted-foreground">
             {row.instruments.join(" · ")}
           </span>
         )}
         <span className="text-xs text-foreground leading-snug">{row.summary}</span>
         {row.sourceDomain && (
-          <span className="ml-1.5 text-[10px] text-muted-foreground">
+          <span className="ml-1.5 text-[11px] text-muted-foreground">
             {row.sourceDomain}
           </span>
         )}
       </div>
 
       {/* Age */}
-      <span className="shrink-0 text-[10px] tabular-nums text-muted-foreground">
+      <span className="shrink-0 text-[11px] tabular-nums text-muted-foreground">
         {ageLabel(row.eventTime)}
       </span>
     </div>
@@ -83,7 +83,7 @@ export function SignalFeed({ signals }: SignalFeedProps) {
       rightSlot={signals.length > 0 ? `${signals.length} SIGNAL${signals.length !== 1 ? "S" : ""}` : undefined}
     >
       {signals.length === 0 ? (
-        <p className="px-3 py-6 text-center text-xs text-muted-foreground">
+        <p className="px-3 py-6 text-center text-[11px] text-muted-foreground">
           awaiting signals…
         </p>
       ) : (

@@ -23,7 +23,7 @@ type AutonomyMode = "observe" | "paper" | "assisted";
 const MODE_STYLES: Record<AutonomyMode, string> = {
   observe: "border-muted-foreground/70 bg-muted/50 text-muted-foreground",
   paper: "border-bullish bg-bullish/10 text-bullish",
-  assisted: "border-yellow-500 bg-yellow-500/10 text-yellow-500",
+  assisted: "border-warning bg-warning/10 text-warning",
 };
 
 const _ET_TIME_FMT = new Intl.DateTimeFormat("en-US", {
@@ -76,7 +76,7 @@ function MarketClock() {
           open ? "bg-bullish" : "bg-muted-foreground/50",
         )}
       />
-      <span className="font-mono text-[10px] uppercase tracking-widest text-muted-foreground">
+      <span className="hidden sm:inline font-mono text-[11px] uppercase tracking-widest text-muted-foreground">
         {timeStr} ET&nbsp;·&nbsp;
         <span className={open ? "text-bullish" : "text-muted-foreground/60"}>
           {open ? "open" : "closed"}
@@ -95,7 +95,7 @@ function ConnectionPip({ connected }: { connected: boolean }) {
           connected ? "bg-bullish" : "bg-bearish",
         )}
       />
-      <span className="text-[10px] uppercase tracking-widest text-muted-foreground">
+      <span className="hidden sm:inline text-[11px] uppercase tracking-widest text-muted-foreground">
         {connected ? "live" : "offline"}
       </span>
     </div>
@@ -112,12 +112,15 @@ function ModeIndicator({
   const modes: AutonomyMode[] = ["observe", "paper", "assisted"];
   return (
     <div className="flex items-center gap-1">
-      {modes.map((m) => (
+      {modes.map((m, i) => (
         <button
           key={m}
           onClick={() => onChange(m)}
+          aria-pressed={mode === m}
+          aria-keyshortcuts={String(i + 1)}
+          title={`${m[0].toUpperCase()}${m.slice(1)} mode [${i + 1}]`}
           className={cn(
-            "rounded border px-2 py-0.5 text-[9px] font-semibold uppercase tracking-wider transition-[color,border-color,background-color] duration-300",
+            "rounded border px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wider transition-[color,border-color,background-color] duration-300",
             mode === m
               ? MODE_STYLES[m]
               : "border-border text-muted-foreground/50 hover:border-muted-foreground/60 hover:text-muted-foreground",
@@ -134,8 +137,10 @@ function HaltButton({ onHalt, pulsing }: { onHalt: () => void; pulsing?: boolean
   return (
     <button
       onClick={onHalt}
+      title="Halt all activity [H]"
+      aria-keyshortcuts="h"
       className={cn(
-        "rounded border border-bearish px-3 py-0.5 text-[9px] font-bold uppercase tracking-wider text-bearish transition-colors hover:bg-bearish/20",
+        "rounded border border-bearish px-3 py-0.5 text-[10px] font-bold uppercase tracking-wider text-bearish transition-colors hover:bg-bearish/20",
         pulsing && "halt-pulsing",
       )}
     >
@@ -190,6 +195,36 @@ export default function App() {
     await fetch(`/api/decisions/${id}/reject`, { method: "POST" });
   }, []);
 
+  // Global keyboard shortcuts: H = halt, 1/2/3 = mode. Skipped inside inputs.
+  useEffect(() => {
+    const onKeyDown = (e: KeyboardEvent) => {
+      const tag = (e.target as HTMLElement).tagName;
+      if (tag === "INPUT" || tag === "TEXTAREA" || tag === "SELECT") return;
+      if (e.metaKey || e.ctrlKey || e.altKey) return;
+      switch (e.key) {
+        case "h":
+        case "H":
+          e.preventDefault();
+          void handleHalt();
+          break;
+        case "1":
+          e.preventDefault();
+          void handleModeChange("observe");
+          break;
+        case "2":
+          e.preventDefault();
+          void handleModeChange("paper");
+          break;
+        case "3":
+          e.preventDefault();
+          void handleModeChange("assisted");
+          break;
+      }
+    };
+    document.addEventListener("keydown", onKeyDown);
+    return () => document.removeEventListener("keydown", onKeyDown);
+  }, [handleHalt, handleModeChange]);
+
   const { ticks, handleEnvelope: handleTick } = useMarketTicks();
   const { snapshot } = usePortfolio();
   const { report, gates, handleEnvelope: handleCalibration } = useCalibration();
@@ -237,7 +272,7 @@ export default function App() {
         <span className="brand-logo text-xs font-semibold tracking-[0.25em] text-muted-foreground">
           AFTERHOURS
         </span>
-        <div className="flex items-center gap-3">
+        <div className="flex items-center gap-2 sm:gap-3">
           <ModeIndicator mode={mode} onChange={handleModeChange} />
           <HaltButton onHalt={handleHalt} pulsing={mode === "assisted"} />
           <MarketClock />

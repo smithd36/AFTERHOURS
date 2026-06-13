@@ -17,11 +17,13 @@ export function PanelShell({
   return (
     <div className={cn("rounded-sm border border-border bg-card", className)}>
       <div className="flex items-center justify-between border-b border-border px-3 py-1.5">
-        <span className="text-[10px] font-semibold uppercase tracking-widest text-muted-foreground">
+        <h2 className="text-[11px] font-semibold uppercase tracking-widest text-muted-foreground">
           {title}
-        </span>
+        </h2>
         {rightSlot != null && (
-          <span className="text-[10px] text-muted-foreground">{rightSlot}</span>
+          <span aria-live="polite" aria-atomic="true" className="text-[11px] text-muted-foreground">
+            {rightSlot}
+          </span>
         )}
       </div>
       {children}

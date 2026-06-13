@@ -1,3 +1,4 @@
+import { useEffect, useMemo, useRef, useState } from "react";
 import { cn } from "@/lib/utils";
 import { PanelShell } from "@/components/layout/PanelShell";
 import type { DecisionRow } from "@/hooks/useDecisions";
@@ -18,7 +19,7 @@ function StatusBadge({ status }: { status: DecisionRow["status"] }) {
   return (
     <span
       className={cn(
-        "inline-block rounded px-1.5 py-0.5 text-[9px] font-semibold uppercase tracking-wider",
+        "inline-block rounded px-1.5 py-0.5 text-[10px] font-semibold uppercase tracking-wider",
         styles[status],
       )}
     >
@@ -31,7 +32,7 @@ function SideBadge({ side }: { side: "long" | "short" }) {
   return (
     <span
       className={cn(
-        "inline-block rounded px-1.5 py-0.5 text-[9px] font-bold uppercase tracking-wider",
+        "inline-block rounded px-1.5 py-0.5 text-[10px] font-bold uppercase tracking-wider",
         side === "long" ? "bg-bullish/20 text-bullish" : "bg-bearish/20 text-bearish",
       )}
     >
@@ -55,8 +56,51 @@ function DecisionCard({
   const pnlColor =
     parseFloat(decision.sizeUsd) > 0 ? "text-foreground" : "text-muted-foreground";
 
+  const [confirming, setConfirming] = useState(false);
+  const timerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  useEffect(() => {
+    return () => { if (timerRef.current) clearTimeout(timerRef.current); };
+  }, []);
+
+  const handleExecuteClick = () => {
+    if (confirming) {
+      if (timerRef.current) clearTimeout(timerRef.current);
+      setConfirming(false);
+      onExecute?.(decision.id);
+    } else {
+      setConfirming(true);
+      timerRef.current = setTimeout(() => setConfirming(false), 3000);
+    }
+  };
+
+  const handleCancelConfirm = () => {
+    if (timerRef.current) clearTimeout(timerRef.current);
+    setConfirming(false);
+  };
+
   return (
-    <div className="rounded-sm bg-muted/60 px-3 py-2.5 text-xs space-y-2">
+    <div
+      className={cn(
+        "rounded-sm bg-muted/60 px-3 py-2.5 text-xs space-y-2",
+        canAct && "outline-none focus-visible:ring-1 focus-visible:ring-ring",
+      )}
+      tabIndex={canAct ? 0 : undefined}
+      aria-label={`${decision.instrument} ${decision.side} decision`}
+      onKeyDown={canAct ? (e) => {
+        if (e.target !== e.currentTarget) return;
+        if (e.key === "Enter") {
+          e.preventDefault();
+          handleExecuteClick();
+        } else if (e.key === "Delete" && !confirming) {
+          e.preventDefault();
+          onReject?.(decision.id);
+        } else if (e.key === "Escape" && confirming) {
+          e.preventDefault();
+          handleCancelConfirm();
+        }
+      } : undefined}
+    >
       <div className="flex items-center justify-between gap-2">
         <div className="flex items-center gap-2">
           <span className="font-mono font-semibold">{decision.instrument}</span>
@@ -70,7 +114,7 @@ function DecisionCard({
 
       <p className="text-muted-foreground line-clamp-2">{decision.reasoning}</p>
 
-      <div className="flex items-center justify-between text-[10px] text-muted-foreground">
+      <div className="flex items-center justify-between text-[11px] text-muted-foreground">
         <span>{decision.timeHorizon}</span>
         <span>{Math.round(decision.confidence * 100)}% confidence</span>
         {decision.stopPrice && <span>stop {decision.stopPrice}</span>}
@@ -79,7 +123,7 @@ function DecisionCard({
       {decision.rejectionReasons.length > 0 && (
         <div className="space-y-0.5">
           {decision.rejectionReasons.map((r) => (
-            <p key={r} className="text-[10px] text-bearish">
+            <p key={r} className="text-[11px] text-bearish">
               ↯ {r}
             </p>
           ))}
@@ -88,18 +132,41 @@ function DecisionCard({
 
       {canAct && (
         <div className="flex gap-2 pt-1">
-          <button
-            onClick={() => onExecute?.(decision.id)}
-            className="flex-1 rounded bg-bullish/20 px-2 py-1 text-[10px] font-semibold uppercase tracking-wider text-bullish hover:bg-bullish/30"
-          >
-            Execute
-          </button>
-          <button
-            onClick={() => onReject?.(decision.id)}
-            className="flex-1 rounded bg-bearish/20 px-2 py-1 text-[10px] font-semibold uppercase tracking-wider text-bearish hover:bg-bearish/30"
-          >
-            Reject
-          </button>
+          {confirming ? (
+            <>
+              <button
+                onClick={handleExecuteClick}
+                aria-label={`Confirm execution of ${decision.instrument} ${decision.side} order`}
+                className="flex-1 rounded bg-warning/20 px-2 py-1 text-[11px] font-semibold uppercase tracking-wider text-warning transition-colors hover:bg-warning/30 focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring"
+              >
+                Confirm?
+              </button>
+              <button
+                onClick={handleCancelConfirm}
+                aria-label="Cancel execution"
+                className="flex-1 rounded bg-muted px-2 py-1 text-[11px] font-semibold uppercase tracking-wider text-muted-foreground transition-colors hover:bg-muted/60 focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring"
+              >
+                Cancel
+              </button>
+            </>
+          ) : (
+            <>
+              <button
+                onClick={handleExecuteClick}
+                aria-label={`Execute ${decision.instrument} ${decision.side} order`}
+                className="flex-1 rounded bg-bullish/20 px-2 py-1 text-[11px] font-semibold uppercase tracking-wider text-bullish transition-colors hover:bg-bullish/30 focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring"
+              >
+                Execute
+              </button>
+              <button
+                onClick={() => onReject?.(decision.id)}
+                aria-label={`Reject ${decision.instrument} ${decision.side} decision`}
+                className="flex-1 rounded bg-bearish/20 px-2 py-1 text-[11px] font-semibold uppercase tracking-wider text-bearish transition-colors hover:bg-bearish/30 focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring"
+              >
+                Reject
+              </button>
+            </>
+          )}
         </div>
       )}
     </div>
@@ -107,23 +174,36 @@ function DecisionCard({
 }
 
 export function DecisionQueue({ decisions, mode, onExecute, onReject }: Props) {
-  const pending = decisions.filter((d) => d.status === "approved" && mode === "assisted");
-  const recent = decisions.filter((d) => d.status !== "approved" || mode !== "assisted");
+  const pending = useMemo(
+    () => decisions.filter((d) => d.status === "approved" && mode === "assisted"),
+    [decisions, mode],
+  );
+  const recent = useMemo(
+    () => decisions.filter((d) => d.status !== "approved" || mode !== "assisted"),
+    [decisions, mode],
+  );
 
   return (
     <PanelShell
       title="DECISION QUEUE"
       rightSlot={pending.length > 0 ? `${pending.length} PENDING` : undefined}
+      className={pending.length > 0 ? "border-warning/50 bg-warning/5" : undefined}
     >
+      {/* Announce pending approvals to screen readers immediately */}
+      <span className="sr-only" aria-live="assertive" aria-atomic="true">
+        {pending.length > 0
+          ? `${pending.length} decision${pending.length !== 1 ? "s" : ""} pending approval`
+          : ""}
+      </span>
       {decisions.length === 0 ? (
         <p className="px-3 py-6 text-center text-[11px] text-muted-foreground">
-          No decisions yet
+          no decisions yet
         </p>
       ) : (
         <div className="max-h-[32rem] overflow-y-auto space-y-2 p-3">
           {pending.length > 0 && (
             <>
-              <p className="text-[10px] font-semibold uppercase tracking-wider text-muted-foreground">
+              <p className="text-[11px] font-semibold uppercase tracking-wider text-muted-foreground">
                 PENDING APPROVAL
               </p>
               {pending.map((d) => (
@@ -136,7 +216,7 @@ export function DecisionQueue({ decisions, mode, onExecute, onReject }: Props) {
                 />
               ))}
               {recent.length > 0 && (
-                <p className="pt-1 text-[10px] font-semibold uppercase tracking-wider text-muted-foreground">
+                <p className="pt-1 text-[11px] font-semibold uppercase tracking-wider text-muted-foreground">
                   RECENT
                 </p>
               )}

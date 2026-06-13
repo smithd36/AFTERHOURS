@@ -1,3 +1,4 @@
+import { useMemo } from "react";
 import { cn } from "@/lib/utils";
 import { PanelShell } from "@/components/layout/PanelShell";
 import type { PortfolioSnapshot } from "@/hooks/usePortfolio";
@@ -18,15 +19,18 @@ function PnlValue({ value }: { value: string }) {
 }
 
 export function PortfolioPanel({ snapshot }: Props) {
+  const positions = useMemo(
+    () => (snapshot ? Object.entries(snapshot.positions) : []),
+    [snapshot],
+  );
+
   if (!snapshot) {
     return (
       <PanelShell title="PORTFOLIO">
-        <p className="px-3 py-6 text-center text-[11px] text-muted-foreground">Loading…</p>
+        <p className="px-3 py-6 text-center text-[11px] text-muted-foreground">loading portfolio…</p>
       </PanelShell>
     );
   }
-
-  const positions = Object.entries(snapshot.positions);
 
   return (
     <PanelShell title="PORTFOLIO">
@@ -53,10 +57,10 @@ export function PortfolioPanel({ snapshot }: Props) {
 
         {/* Positions */}
         {positions.length === 0 ? (
-          <p className="py-2 text-center text-[11px] text-muted-foreground">No open positions</p>
+          <p className="py-2 text-center text-[11px] text-muted-foreground">no open positions</p>
         ) : (
           <div className="space-y-2">
-            <p className="text-[10px] font-semibold uppercase tracking-wider text-muted-foreground">
+            <p className="text-[11px] font-semibold uppercase tracking-wider text-muted-foreground">
               Open positions ({positions.length})
             </p>
             {positions.map(([instrument, pos]) => (
@@ -66,7 +70,7 @@ export function PortfolioPanel({ snapshot }: Props) {
                     <span className="font-mono font-semibold">{instrument}</span>
                     <span
                       className={cn(
-                        "inline-block rounded px-1.5 py-0.5 text-[9px] font-bold uppercase tracking-wider",
+                        "inline-block rounded px-1.5 py-0.5 text-[10px] font-bold uppercase tracking-wider",
                         pos.side === "long"
                           ? "bg-bullish/20 text-bullish"
                           : "bg-bearish/20 text-bearish",
@@ -77,7 +81,7 @@ export function PortfolioPanel({ snapshot }: Props) {
                   </div>
                   <PnlValue value={pos.unrealized_pnl} />
                 </div>
-                <div className="mt-1 flex items-center justify-between text-[10px] text-muted-foreground">
+                <div className="mt-1 flex items-center justify-between text-[11px] text-muted-foreground">
                   <span>
                     entry {parseFloat(pos.entry_price).toLocaleString()} → {parseFloat(pos.current_price).toLocaleString()}
                   </span>

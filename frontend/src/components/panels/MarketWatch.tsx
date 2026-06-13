@@ -88,7 +88,7 @@ export function MarketWatch({ ticks }: MarketWatchProps) {
   return (
     <PanelShell title="MARKET WATCH" rightSlot={countLabel}>
       {rows.length === 0 ? (
-        <p className="px-3 py-6 text-center text-xs text-muted-foreground">
+        <p className="px-3 py-6 text-center text-[11px] text-muted-foreground">
           awaiting data…
         </p>
       ) : (
@@ -99,7 +99,7 @@ export function MarketWatch({ ticks }: MarketWatchProps) {
                 <th
                   key={h}
                   className={cn(
-                    "px-3 py-1 text-[10px] font-medium uppercase tracking-wider text-muted-foreground",
+                    "px-3 py-1 text-[11px] font-medium uppercase tracking-wider text-muted-foreground",
                     h === "INSTRUMENT" ? "text-left" : "text-right",
                     HIDE_BELOW_SM.has(h) && "hidden sm:table-cell",
                   )}

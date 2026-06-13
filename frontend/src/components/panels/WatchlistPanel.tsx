@@ -12,8 +12,8 @@ interface WatchlistPanelProps {
 }
 
 const MARKET_COLOR: Record<string, string> = {
-  crypto: "text-blue-400",
-  equity: "text-yellow-400",
+  crypto: "text-info",
+  equity: "text-warning",
 };
 
 function FeedDot({ live }: { live: boolean }) {
@@ -54,8 +54,9 @@ function EntryRow({
       <td className="px-3 py-1.5 text-right">
         <button
           onClick={() => onRemove(entry.instrument)}
-          className="text-[10px] text-muted-foreground opacity-0 transition-opacity group-hover:opacity-100 hover:text-bearish"
+          className="inline-flex h-6 w-6 items-center justify-center rounded text-[11px] text-muted-foreground opacity-0 transition-opacity group-hover:opacity-100 hover:text-bearish"
           title={`Remove ${entry.instrument}`}
+          aria-label={`Remove ${entry.instrument}`}
         >
           ✕
         </button>
@@ -129,13 +130,15 @@ export function WatchlistPanel({
           onChange={(e) => setInput(e.target.value)}
           onKeyDown={handleKeyDown}
           placeholder="BTC-USD, AAPL…"
-          className="flex-1 bg-transparent text-xs outline-none placeholder:text-muted-foreground/40"
+          aria-label="Instrument symbol"
+          className="flex-1 bg-transparent text-xs outline-none focus-visible:ring-1 focus-visible:ring-ring placeholder:text-muted-foreground/40"
           disabled={submitting}
         />
         <select
           value={market}
           onChange={(e) => setMarket(e.target.value as "crypto" | "equity")}
-          className="bg-transparent text-[10px] uppercase text-muted-foreground outline-none"
+          aria-label="Market type"
+          className="bg-transparent text-[11px] uppercase text-muted-foreground outline-none focus-visible:ring-1 focus-visible:ring-ring"
         >
           <option value="crypto">crypto</option>
           <option value="equity">equity</option>
@@ -143,14 +146,14 @@ export function WatchlistPanel({
         <button
           onClick={handleAdd}
           disabled={submitting || !input.trim()}
-          className="text-[10px] font-semibold uppercase tracking-wider text-bullish disabled:opacity-40 hover:text-bullish/80"
+          className="text-[11px] font-semibold uppercase tracking-wider text-bullish disabled:opacity-40 hover:text-bullish/80"
         >
           ADD
         </button>
       </div>
 
       {addError && (
-        <p className="px-3 py-1 text-[10px] text-bearish">{addError}</p>
+        <p className="px-3 py-1 text-[11px] text-bearish">{addError}</p>
       )}
 
       {/* Search row — only shown when there's something to filter */}
@@ -160,7 +163,8 @@ export function WatchlistPanel({
             value={search}
             onChange={(e) => setSearch(e.target.value)}
             placeholder="filter…"
-            className="w-full bg-transparent text-[10px] outline-none placeholder:text-muted-foreground/30"
+            aria-label="Filter watchlist"
+            className="w-full bg-transparent text-[11px] outline-none focus-visible:ring-1 focus-visible:ring-ring placeholder:text-muted-foreground/30"
           />
         </div>
       )}
@@ -171,7 +175,7 @@ export function WatchlistPanel({
           watchlist empty
         </p>
       ) : !loading && filtered.length === 0 ? (
-        <p className="px-3 py-4 text-center text-[10px] text-muted-foreground">
+        <p className="px-3 py-4 text-center text-[11px] text-muted-foreground">
           no match for "{search}"
         </p>
       ) : (

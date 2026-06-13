@@ -1,3 +1,4 @@
+import { useMemo } from "react";
 import { cn } from "@/lib/utils";
 import { PanelShell } from "@/components/layout/PanelShell";
 import type { ThesisRow } from "@/hooks/useTheses";
@@ -48,7 +49,7 @@ function ThesisItem({ row }: { row: ThesisRow }) {
       <div className="flex items-center gap-2 mb-1">
         <span
           className={cn(
-            "shrink-0 rounded-sm px-1 py-0.5 text-[9px] font-semibold uppercase tracking-wider",
+            "shrink-0 rounded-sm px-1 py-0.5 text-[10px] font-semibold uppercase tracking-wider",
             DIRECTION_CLASSES[row.direction],
           )}
         >
@@ -56,14 +57,14 @@ function ThesisItem({ row }: { row: ThesisRow }) {
         </span>
         <span
           className={cn(
-            "shrink-0 rounded-sm px-1 py-0.5 text-[9px] font-semibold uppercase tracking-wider",
+            "shrink-0 rounded-sm px-1 py-0.5 text-[10px] font-semibold uppercase tracking-wider",
             STATUS_CLASSES[row.status],
           )}
         >
           {row.status}
         </span>
-        <span className="text-[10px] font-medium text-muted-foreground">{row.instrument}</span>
-        <span className="ml-auto shrink-0 text-[10px] tabular-nums text-muted-foreground">
+        <span className="text-[11px] font-medium text-muted-foreground">{row.instrument}</span>
+        <span className="ml-auto shrink-0 text-[11px] tabular-nums text-muted-foreground">
           {pct}% conf · {ageLabel(row.receivedAt)}
         </span>
       </div>
@@ -82,7 +83,7 @@ function ThesisItem({ row }: { row: ThesisRow }) {
       {row.invalidationConditions.length > 0 && (
         <ul className="space-y-0.5">
           {row.invalidationConditions.map((c, i) => (
-            <li key={i} className="flex items-start gap-1 text-[10px] text-muted-foreground">
+            <li key={i} className="flex items-start gap-1 text-[11px] text-muted-foreground">
               <span className="mt-px text-warning shrink-0">↯</span>
               <span>{c}</span>
             </li>
@@ -102,7 +103,7 @@ interface ThesisFeedProps {
 }
 
 export function ThesisFeed({ theses }: ThesisFeedProps) {
-  const active = theses.filter((t) => t.status === "active").length;
+  const active = useMemo(() => theses.filter((t) => t.status === "active").length, [theses]);
 
   return (
     <PanelShell
