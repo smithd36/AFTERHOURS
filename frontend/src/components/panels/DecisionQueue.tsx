@@ -137,14 +137,14 @@ function DecisionCard({
               <button
                 onClick={handleExecuteClick}
                 aria-label={`Confirm execution of ${decision.instrument} ${decision.side} order`}
-                className="flex-1 rounded bg-warning/20 px-2 py-1 text-[11px] font-semibold uppercase tracking-wider text-warning transition-colors hover:bg-warning/30 focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring"
+                className="flex-1 rounded bg-warning/20 px-2 py-1 text-[11px] font-semibold uppercase tracking-wider text-warning transition-colors hover:bg-warning/30 active:bg-warning/40 focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring pointer-coarse:min-h-11 pointer-coarse:py-2.5"
               >
                 Confirm?
               </button>
               <button
                 onClick={handleCancelConfirm}
                 aria-label="Cancel execution"
-                className="flex-1 rounded bg-muted px-2 py-1 text-[11px] font-semibold uppercase tracking-wider text-muted-foreground transition-colors hover:bg-muted/60 focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring"
+                className="flex-1 rounded bg-muted px-2 py-1 text-[11px] font-semibold uppercase tracking-wider text-muted-foreground transition-colors hover:bg-muted/60 active:bg-muted/80 focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring pointer-coarse:min-h-11 pointer-coarse:py-2.5"
               >
                 Cancel
               </button>
@@ -154,14 +154,14 @@ function DecisionCard({
               <button
                 onClick={handleExecuteClick}
                 aria-label={`Execute ${decision.instrument} ${decision.side} order`}
-                className="flex-1 rounded bg-bullish/20 px-2 py-1 text-[11px] font-semibold uppercase tracking-wider text-bullish transition-colors hover:bg-bullish/30 focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring"
+                className="flex-1 rounded bg-bullish/20 px-2 py-1 text-[11px] font-semibold uppercase tracking-wider text-bullish transition-colors hover:bg-bullish/30 active:bg-bullish/40 focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring pointer-coarse:min-h-11 pointer-coarse:py-2.5"
               >
                 Execute
               </button>
               <button
                 onClick={() => onReject?.(decision.id)}
                 aria-label={`Reject ${decision.instrument} ${decision.side} decision`}
-                className="flex-1 rounded bg-bearish/20 px-2 py-1 text-[11px] font-semibold uppercase tracking-wider text-bearish transition-colors hover:bg-bearish/30 focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring"
+                className="flex-1 rounded bg-bearish/20 px-2 py-1 text-[11px] font-semibold uppercase tracking-wider text-bearish transition-colors hover:bg-bearish/30 active:bg-bearish/40 focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring pointer-coarse:min-h-11 pointer-coarse:py-2.5"
               >
                 Reject
               </button>
