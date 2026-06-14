@@ -1,5 +1,9 @@
 # Phase 6 Plan — Live Trading, in four graduated sub-phases
 
+> **⚠ Renumbered 2026-06-13 (ADR-010):** this is now the **Phase 7** plan — alternative-data
+> ingestion was inserted as the new Phase 6. Sub-phases **6A–6D below are now 7A–7D**. The filename
+> is retained to avoid breaking references; read every "Phase 6" in this document as "Phase 7".
+>
 > **Status:** Phases 0–5 complete. Pre-Phase-6 hardening's live-trading blockers are cleared
 > (all CRITICAL `phase-6-blocker` issues closed, 2026-06-12). Phase 6 is **not yet started**; this
 > document is the plan.

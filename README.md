@@ -8,7 +8,7 @@ A modular monolith that connects live market data, LLM-generated trade theses, a
 
 ## Status
 
-**Phase 5 complete; Phase 6 (live trading) next — staged 6A–6D, starting with micro-capital validation.** Full decision pipeline live end-to-end, with user-managed watchlist, dynamic feed routing across crypto and equity, watchlist-scoped pipeline filtering, and tick retention:
+**Phase 5 complete; Phase 6 (alternative-data ingestion) next — 6A signal feeds (enrich-only) then 6B auto-discovery; live trading is now Phase 7 (staged 7A–7D), per [ADR-010](docs/adr/010-roadmap-rescope-alt-data-phase6.md).** Full decision pipeline live end-to-end, with user-managed watchlist, dynamic feed routing across crypto and equity, watchlist-scoped pipeline filtering, and tick retention:
 
 ```
 Kraken WebSocket ─┐
@@ -45,9 +45,9 @@ event log on restart, ledger accounting is corrected (entry-fee P&L, short equit
 rollover, affordability), decision→order→fill carries a deterministic client order ID, prices
 quantize magnitude-aware (sub-cent safe), and LLM output is schema-validated before publish. All
 7 CRITICAL phase-6-blocker issues and the IMPORTANT correctness/durability issues are closed; the
-one remaining entry gate for Phase 6A is a single-operator local gateway bar — bind `127.0.0.1`
+one remaining entry gate for Phase 7A (live trading) is a single-operator local gateway bar — bind `127.0.0.1`
 (today's `0.0.0.0` default exposes the kill switch to the whole LAN) plus a shared-secret token on
-state-changing routes and the WS (full "auth like a bank" deferred to Phase 7+) — plus a few
+state-changing routes and the WS (full "auth like a bank" deferred to Phase 8+) — plus a few
 non-blocking hygiene cleanups. Tracked in [`docs/pre-phase-6-issues.md`](docs/pre-phase-6-issues.md)
 (review: `docs/pre-phase6-review.md`).
 
@@ -170,7 +170,7 @@ afterhours/
 ├── ingestion/              # Market data feeds and signal generators
 │   ├── kraken/             # Kraken WebSocket v2 (primary, no auth; dynamic subscribe/unsubscribe)
 │   ├── equity/             # EquityFeed stub — REST polling (Alpaca/Polygon free tier)
-│   ├── coinbase/           # Coinbase Advanced Trade (secondary; auth wiring in Phase 6)
+│   ├── coinbase/           # Coinbase Advanced Trade (secondary; auth wiring in Phase 7)
 │   ├── alerts/             # PriceAlertGenerator — tick → signal.created
 │   ├── news/               # RSS feed poller (CoinDesk, CoinTelegraph)
 │   ├── router.py           # FeedRouter — maps watchlist add/remove to feed subscriptions
@@ -215,7 +215,7 @@ afterhours/
 
 **Autonomy is graduated.** Five modes — Observe → Paper → Assisted → Semi-auto → Supervised — with explicit promotion criteria and automatic demotion triggers. Kill switch available at all times.
 
-**Free data first.** All external data is behind adapters. Kraken WebSocket v2 (no API key needed) is the confirmed primary crypto data source. Equity data uses Alpaca or Polygon free-tier REST polling (`EQUITY_FEED_API_KEY`); without a key the equity feed runs in no-op mode (watchlist management still works). Coinbase stays integrated as the secondary data feed (ADR-007). **Live execution** (Phase 6) uses Alpaca primary + Kraken secondary (ADR-009) — no execution keys needed until Phase 6A.
+**Free data first.** All external data is behind adapters. Kraken WebSocket v2 (no API key needed) is the confirmed primary crypto data source. Equity data uses Alpaca or Polygon free-tier REST polling (`EQUITY_FEED_API_KEY`); without a key the equity feed runs in no-op mode (watchlist management still works). Coinbase stays integrated as the secondary data feed (ADR-007). **Live execution** (Phase 7) uses Alpaca primary + Kraken secondary (ADR-009) — no execution keys needed until Phase 7A.
 
 See [`PLANNING.md`](PLANNING.md) for the full non-negotiables list.
 
@@ -231,14 +231,16 @@ See [`PLANNING.md`](PLANNING.md) for the full non-negotiables list.
 | **3** ✅ | Risk + Paper | Decision generator, risk engine, kill switch, paper execution, portfolio/ledger, Decision Queue UI |
 | **4** ✅ | Backtest + Calibration | Backtesting engine (event-time replay, no look-ahead), decision outcome resolution, ECE calibration reporting, autonomy gate tracking |
 | **5** ✅ | Watchlist & Multi-Instrument | User-managed watchlist, dynamic feed routing (crypto + equity stub), watchlist-scoped pipeline, tick retention, WatchlistPanel |
-| **6A** | Micro-capital validation | `BrokerAdapter` + Alpaca (paper→live), Assisted-only real orders at $250–500, reconciliation, order state machine, in-flight recovery |
-| **6B** | Execution realism + 2nd venue | Kraken live crypto, venue routing, friction model recalibrated from live fills, per-venue reconciliation |
-| **6C** | Graduated capital ramp | Stepwise size increases gated on clean reconciliation, live limits re-tuned, operational runbook |
-| **6D** | Live semi-auto | Bounded autonomous execution (Appendix B Assisted→Semi-auto gate), full-strength demotion triggers |
-| **7** | Scale + Autonomy | Full equities adapter, supervised-auto mode, correlation risk, Strategy Lab, Postgres migration path |
-| **8** | Harden + Extend | Performance, service extraction, advanced observability, disaster recovery |
+| **6A** | Alt-data signal feeds (enrich-only) | Form 4 / Congress / lobbying+contracts / options-flow / supply-chain pollers → `signal.created`; materiality filters, disclosure-date `event_time`, thesis-seed trigger; trades watched equities only |
+| **6B** | Auto-discovery | High-conviction alt-data auto-adds unwatched names to the watchlist behind caps + liquidity-aware sizing |
+| **7A** | Micro-capital validation | `BrokerAdapter` + Alpaca (paper→live), Assisted-only real orders at $250–500, reconciliation, order state machine, in-flight recovery |
+| **7B** | Execution realism + 2nd venue | Kraken live crypto, venue routing, friction model recalibrated from live fills, per-venue reconciliation |
+| **7C** | Graduated capital ramp | Stepwise size increases gated on clean reconciliation, live limits re-tuned, operational runbook |
+| **7D** | Live semi-auto | Bounded autonomous execution (Appendix B Assisted→Semi-auto gate), full-strength demotion triggers |
+| **8** | Scale + Autonomy | Full equities adapter, supervised-auto mode, correlation risk, Strategy Lab, Postgres migration path |
+| **9** | Harden + Extend | Performance, service extraction, advanced observability, disaster recovery |
 
-Phase 6 breakdown with entry gates and exit checklists: [`docs/phase-6-plan.md`](docs/phase-6-plan.md). Execution venue decision: [`docs/adr/009-live-execution-venue.md`](docs/adr/009-live-execution-venue.md).
+Phase 6 (alt-data) rationale and design: [`docs/adr/010-roadmap-rescope-alt-data-phase6.md`](docs/adr/010-roadmap-rescope-alt-data-phase6.md). Phase 7 (live trading) breakdown with entry gates and exit checklists: [`docs/phase-6-plan.md`](docs/phase-6-plan.md) (filename retained; renumbered per ADR-010). Execution venue decision: [`docs/adr/009-live-execution-venue.md`](docs/adr/009-live-execution-venue.md).
 
 ---
 
@@ -246,7 +248,7 @@ Phase 6 breakdown with entry gates and exit checklists: [`docs/phase-6-plan.md`]
 
 **Read-only. Withdrawal-disabled. Never committed.**
 
-Real API keys go in `.env` (gitignored). The `.env.example` template contains no real values. Phases 0–5 use only public WebSocket/REST endpoints — no exchange API key is needed until live trading in Phase 6.
+Real API keys go in `.env` (gitignored). The `.env.example` template contains no real values. Phases 0–5 use only public WebSocket/REST endpoints; Phase 6 (alt-data) may use free-tier *data* keys (SEC EDGAR needs none; Quiver/Alpaca-data free tiers) but **no exchange/execution key** — that is not needed until live trading in Phase 7.
 
 See [`docs/adr/003-api-key-security.md`](docs/adr/003-api-key-security.md).
 
