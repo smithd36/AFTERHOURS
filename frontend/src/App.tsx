@@ -118,7 +118,7 @@ function MarketClock() {
           open ? "bg-bullish" : "bg-muted-foreground/50",
         )}
       />
-      <span className="hidden sm:inline font-mono text-[11px] uppercase tracking-widest text-muted-foreground">
+      <span className="whitespace-nowrap font-mono text-[11px] uppercase tracking-widest text-muted-foreground">
         {timeStr} ET&nbsp;·&nbsp;
         <span className={open ? "text-bullish" : "text-muted-foreground/60"}>
           {open ? "open" : "closed"}
