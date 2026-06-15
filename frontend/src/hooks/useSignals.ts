@@ -15,9 +15,12 @@ export interface SignalRow {
 // Matches the backend /api/events/recent max limit — the panel scrolls, so the
 // cap only bounds memory, not layout.
 const MAX_SIGNALS = 500;
-// price_alert is high-volume and low-value — cap its share so it can't crowd
-// news/alt-data out of the window over a long session. ponytail: raise if too few.
-const PRICE_ALERT_CAP = 50;
+// High-volume families get a per-type cap so they can't crowd sparse alt-data
+// (insider_tx/supply_chain/gov) out of the shared window — on a racing backfill
+// or over a long live session. Caps sum well under MAX_SIGNALS, so the uncapped
+// sparse types always have headroom. ponytail: tune the numbers if a family
+// shows too few/many.
+const TYPE_CAPS: Record<string, number> = { news: 400, price_alert: 50 };
 
 interface SignalPayload {
   id: string;
@@ -69,12 +72,15 @@ function reducer(state: SignalRow[], action: Action): SignalRow[] {
     if (!row) return state;
     if (state.some((r) => r.id === row.id)) return state;
     let next = [row, ...state];
-    // Drop oldest price alerts beyond the cap (next is newest-first), so they
-    // can't dominate the window. O(n), n<=500 — cheap.
-    const alerts = next.filter((r) => r.signalType === "price_alert");
-    if (alerts.length > PRICE_ALERT_CAP) {
-      const drop = new Set(alerts.slice(PRICE_ALERT_CAP).map((r) => r.id));
-      next = next.filter((r) => !drop.has(r.id));
+    // Drop the oldest rows of any capped family beyond its cap (next is
+    // newest-first) so high-volume types can't bury sparse alt-data. O(n) per
+    // capped type, n<=500 — cheap.
+    for (const [type, cap] of Object.entries(TYPE_CAPS)) {
+      const ofType = next.filter((r) => r.signalType === type);
+      if (ofType.length > cap) {
+        const drop = new Set(ofType.slice(cap).map((r) => r.id));
+        next = next.filter((r) => !drop.has(r.id));
+      }
     }
     return next.length > MAX_SIGNALS ? next.slice(0, MAX_SIGNALS) : next;
   }

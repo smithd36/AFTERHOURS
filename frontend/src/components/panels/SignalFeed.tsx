@@ -1,6 +1,29 @@
+import { useMemo, useState } from "react";
 import { cn } from "@/lib/utils";
 import { PanelShell } from "@/components/layout/PanelShell";
 import type { SignalRow } from "@/hooks/useSignals";
+
+// ---------------------------------------------------------------------------
+// Tabs — the flat feed is grouped by signal type so a high-volume family (news)
+// can't visually bury a sparse one (insider/supply). The bar is built from the
+// types actually present; this is just the preferred order — unlisted types are
+// appended after these. Labels come from SOURCE_BADGE below.
+// ---------------------------------------------------------------------------
+
+const TAB_ORDER = [
+  "news",
+  "price_alert",
+  "insider_tx",
+  "congressional_tx",
+  "gov_contract",
+  "lobbying",
+  "supply_chain",
+];
+
+function tabRank(type: string): number {
+  const i = TAB_ORDER.indexOf(type);
+  return i === -1 ? TAB_ORDER.length : i;
+}
 
 // ---------------------------------------------------------------------------
 // Helpers
@@ -99,18 +122,67 @@ interface SignalFeedProps {
 }
 
 export function SignalFeed({ signals }: SignalFeedProps) {
+  const [active, setActive] = useState<string>("all");
+
+  // Tab list + per-type counts, derived from the signals present. The active
+  // tab is kept visible even if it momentarily drops to zero, so the selection
+  // never disappears under the user.
+  const { tabs, counts } = useMemo(() => {
+    const counts: Record<string, number> = {};
+    for (const s of signals) counts[s.signalType] = (counts[s.signalType] ?? 0) + 1;
+    const present = new Set(Object.keys(counts));
+    if (active !== "all") present.add(active);
+    const ordered = [...present].sort((a, b) => tabRank(a) - tabRank(b));
+    return { tabs: ["all", ...ordered], counts };
+  }, [signals, active]);
+
+  const visible = useMemo(
+    () => (active === "all" ? signals : signals.filter((s) => s.signalType === active)),
+    [signals, active],
+  );
+
   return (
     <PanelShell
       title="SIGNAL FEED"
       rightSlot={signals.length > 0 ? `${signals.length} SIGNAL${signals.length !== 1 ? "S" : ""}` : undefined}
     >
-      {signals.length === 0 ? (
+      {/* Family tabs */}
+      <div
+        role="tablist"
+        aria-label="Signal families"
+        className="flex flex-wrap gap-1 border-b border-border/60 px-2 py-1.5"
+      >
+        {tabs.map((key) => {
+          const label = key === "all" ? "ALL" : sourceBadge(key).label;
+          const count = key === "all" ? signals.length : counts[key] ?? 0;
+          return (
+            <button
+              key={key}
+              type="button"
+              role="tab"
+              aria-selected={active === key}
+              onClick={() => setActive(key)}
+              className={cn(
+                "rounded-sm px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wider transition-colors focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring",
+                active === key
+                  ? "bg-muted text-foreground"
+                  : "text-muted-foreground hover:bg-muted/40 hover:text-foreground",
+              )}
+            >
+              {label}
+              <span className="ml-1 tabular-nums opacity-60">{count}</span>
+            </button>
+          );
+        })}
+      </div>
+
+      {visible.length === 0 ? (
         <p className="px-3 py-6 text-center text-[11px] text-muted-foreground">
-          awaiting signals…
+          {signals.length === 0 ? "awaiting signals…" : "no signals in this family"}
         </p>
       ) : (
         <div className="max-h-96 overflow-y-auto">
-          {signals.map((row) => (
+          {visible.map((row) => (
             <SignalItem key={row.id} row={row} />
           ))}
         </div>
