@@ -9,6 +9,7 @@ import {
 import {
   Brain,
   CandlestickChart,
+  Gauge,
   Gavel,
   Radio,
   Wallet,
@@ -61,7 +62,7 @@ function useMediaQuery(query: string): boolean {
   return matches;
 }
 
-type TabId = "markets" | "signals" | "theses" | "decisions" | "book";
+type TabId = "markets" | "signals" | "theses" | "decisions" | "book" | "calib";
 
 interface TabDef {
   id: TabId;
@@ -205,7 +206,7 @@ function MobileTabBar({
   return (
     <nav
       aria-label="Panels"
-      className="grid shrink-0 grid-cols-5 border-t border-border bg-card pb-[env(safe-area-inset-bottom)]"
+      className="grid shrink-0 grid-cols-6 border-t border-border bg-card pb-[env(safe-area-inset-bottom)]"
     >
       {tabs.map((tab) => {
         const Icon = tab.icon;
@@ -243,7 +244,7 @@ function MobileTabBar({
                 </span>
               )}
             </span>
-            {tab.label}
+            <span className="max-w-full truncate px-0.5">{tab.label}</span>
           </button>
         );
       })}
@@ -420,6 +421,7 @@ export default function App() {
     { id: "theses", label: "Theses", icon: Brain },
     { id: "decisions", label: "Decisions", icon: Gavel, badge: pendingCount },
     { id: "book", label: "Book", icon: Wallet },
+    { id: "calib", label: "Calib", icon: Gauge },
   ];
 
   const mobilePanel: Record<TabId, ReactNode> = {
@@ -431,9 +433,9 @@ export default function App() {
       <div className="space-y-2">
         {watchlist}
         {portfolio}
-        {calibration}
       </div>
     ),
+    calib: calibration,
   };
 
   return (

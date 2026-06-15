@@ -27,3 +27,11 @@ class CalibrationSettings(BaseSettings):
     gate_paper_min_sample: int = 100  # resolved paper decisions for Paper → Assisted
     gate_paper_min_days: int = 14  # minimum span of the paper sample
     gate_paper_max_ece: float = 0.12
+
+    # --- Economic readiness (Paper → Assisted): cost-adjusted round-trip P&L ---
+    # Calibration proves confidence matches outcomes; it says nothing about money.
+    # These gate on realized P&L net of fees (Portfolio.realized_trades) so a
+    # well-calibrated but unprofitable strategy cannot graduate.
+    gate_econ_min_trades: int = 50  # closed round-trips before economics are trusted
+    gate_econ_min_profit_factor: float = 1.1  # gross win / gross loss
+    gate_econ_max_drawdown_pct: float = 0.20  # max peak-to-trough, as fraction of initial cash

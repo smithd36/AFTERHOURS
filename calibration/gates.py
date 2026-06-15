@@ -10,8 +10,9 @@ an operator decision informed by this report, never an automatic one.
 
 from __future__ import annotations
 
-from collections.abc import Iterable
-from typing import Any
+from collections.abc import Iterable, Sequence
+from decimal import Decimal
+from typing import Any, Protocol
 
 import structlog
 
@@ -45,9 +46,67 @@ def _is_hard_breach(envelope: EventEnvelope) -> bool:
 
 
 def _criterion(
-    name: str, required: str, current: str, passed: bool
+    name: str, required: str, current: str, passed: bool, group: str = "operational"
 ) -> dict[str, Any]:
-    return {"name": name, "required": required, "current": current, "passed": passed}
+    # `group` tags each criterion operational | calibration | economic so the
+    # report carries the two-gate separation without changing its flat shape
+    # (the panel renders criteria as a list and ignores the extra field).
+    return {
+        "name": name,
+        "required": required,
+        "current": current,
+        "passed": passed,
+        "group": group,
+    }
+
+
+class TradeBook(Protocol):
+    """The slice of the paper Portfolio the economic gate reads — structural, so
+    calibration/ keeps no import dependency on portfolio/."""
+
+    @property
+    def realized_trades(self) -> Sequence[Decimal]: ...
+    @property
+    def initial_cash(self) -> Decimal: ...
+
+
+def economic_metrics(realized: Sequence[Decimal]) -> dict[str, Any]:
+    """Round-trip economics from net-of-fee realized P&L per closed trade.
+
+    `realized` is the Portfolio's per-close P&L (entry + exit fees already
+    deducted — see ``Portfolio.close_position``), so every figure here is
+    cost-adjusted. ``profit_factor`` is ``None`` when there are no losing trades
+    (undefined / effectively infinite); the gate treats that as passing when the
+    book is net-positive.
+    """
+    n = len(realized)
+    if n == 0:
+        return {
+            "trades": 0,
+            "net_pnl": Decimal("0"),
+            "expectancy": None,
+            "win_rate": None,
+            "profit_factor": None,
+            "max_drawdown": Decimal("0"),
+        }
+    wins = [r for r in realized if r > 0]
+    gross_win = sum(wins, Decimal("0"))
+    gross_loss = -sum((r for r in realized if r < 0), Decimal("0"))  # positive magnitude
+    net = sum(realized, Decimal("0"))
+    # Max peak-to-trough on the cumulative realized-P&L curve.
+    peak = cum = max_dd = Decimal("0")
+    for r in realized:
+        cum += r
+        peak = max(peak, cum)
+        max_dd = max(max_dd, peak - cum)
+    return {
+        "trades": n,
+        "net_pnl": net,
+        "expectancy": net / n,
+        "win_rate": len(wins) / n,
+        "profit_factor": (gross_win / gross_loss) if gross_loss > 0 else None,
+        "max_drawdown": max_dd,
+    }
 
 
 class GateTracker:
@@ -56,10 +115,14 @@ class GateTracker:
         bus: Bus,
         engine: CalibrationEngine,
         settings: CalibrationSettings | None = None,
+        trade_book: TradeBook | None = None,
     ) -> None:
         self._bus = bus
         self._engine = engine
         self._settings = settings or CalibrationSettings()
+        # Source of the economic gate. None only in unit tests that exercise the
+        # operational criteria alone — the gateway always wires the paper book.
+        self._trade_book = trade_book
         self._limit_breaches = 0
         self._sub: Subscription | None = None
 
@@ -112,6 +175,7 @@ class GateTracker:
                 f"<= {s.gate_observe_max_ece}",
                 f"{ece:.4f}" if ece is not None else "no sample",
                 ece is not None and ece <= s.gate_observe_max_ece,
+                "calibration",
             ),
         ]
         return self._verdict(criteria, deferred=["regime_coverage >= 1"])
@@ -139,6 +203,7 @@ class GateTracker:
                 f"<= {s.gate_paper_max_ece}",
                 f"{ece:.4f}" if ece is not None else "no sample",
                 ece is not None and ece <= s.gate_paper_max_ece,
+                "calibration",
             ),
             _criterion(
                 "risk_limit_breaches",
@@ -147,15 +212,61 @@ class GateTracker:
                 self._limit_breaches == 0,
             ),
         ]
+        criteria.extend(self._economic_criteria())
         return self._verdict(
             criteria,
             deferred=[
                 "regime_coverage >= 2",
-                "sharpe > 0 net of modeled fees + slippage",
+                "sharpe > 0 net of modeled fees + slippage",  # needs a return series
                 "kill-switch drill passed",
                 "secrets hardened + reconciliation clean",
             ],
         )
+
+    def _economic_criteria(self) -> list[dict[str, Any]]:
+        """Cost-adjusted profitability gate (Gate 2). Empty when no trade book is
+        wired (unit tests); a wired-but-empty book fails ``closed_trades``."""
+        if self._trade_book is None:
+            return []
+        s = self._settings
+        m = economic_metrics(self._trade_book.realized_trades)
+        pf = m["profit_factor"]
+        min_pf = Decimal(str(s.gate_econ_min_profit_factor))
+        dd_cap = self._trade_book.initial_cash * Decimal(str(s.gate_econ_max_drawdown_pct))
+        net: Decimal = m["net_pnl"]
+        expectancy: Decimal | None = m["expectancy"]
+        return [
+            _criterion(
+                "closed_trades",
+                f">= {s.gate_econ_min_trades}",
+                str(m["trades"]),
+                m["trades"] >= s.gate_econ_min_trades,
+                "economic",
+            ),
+            _criterion("net_pnl", "> 0", f"{net:.2f}", net > 0, "economic"),
+            _criterion(
+                "expectancy",
+                "> 0",
+                f"{expectancy:.4f}" if expectancy is not None else "no trades",
+                expectancy is not None and expectancy > 0,
+                "economic",
+            ),
+            _criterion(
+                "profit_factor",
+                f">= {s.gate_econ_min_profit_factor}",
+                # None = no losing trades yet → undefined; passes only if net-positive.
+                "inf" if pf is None else f"{pf:.2f}",
+                (pf is None and net > 0) or (pf is not None and pf >= min_pf),
+                "economic",
+            ),
+            _criterion(
+                "max_drawdown",
+                f"<= {dd_cap:.2f}",
+                f"{m['max_drawdown']:.2f}",
+                m["max_drawdown"] <= dd_cap,
+                "economic",
+            ),
+        ]
 
     @staticmethod
     def _verdict(criteria: list[dict[str, Any]], deferred: list[str]) -> dict[str, Any]:

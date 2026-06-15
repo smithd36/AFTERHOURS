@@ -20,11 +20,14 @@ export interface CalibrationReport {
   by_mode: Record<string, CalibrationStats>;
 }
 
+export type GateGroup = "operational" | "calibration" | "economic";
+
 export interface GateCriterion {
   name: string;
   required: string;
   current: string;
   passed: boolean;
+  group: GateGroup;
 }
 
 export interface GateStatus {

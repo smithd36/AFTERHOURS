@@ -62,7 +62,7 @@ function DecisionDetailView({ detail }: { detail: DecisionDetail }) {
   return (
     <div className="mt-2 space-y-1.5 border-t border-border/60 pt-2 text-[11px]">
       <p className="text-muted-foreground">{detail.reasoning || "no reasoning recorded"}</p>
-      <div className="flex items-center justify-between text-muted-foreground">
+      <div className="flex flex-wrap items-center justify-between gap-x-3 gap-y-0.5 text-muted-foreground">
         <span>{Math.round(detail.confidence * 100)}% confidence</span>
         {detail.openedAt && (
           <span>
@@ -192,7 +192,9 @@ export function PortfolioPanel({ snapshot, decisions }: Props) {
 
   return (
     <PanelShell title="PORTFOLIO">
-      <div className="max-h-80 overflow-y-auto space-y-3 p-3">
+      {/* Cap height only on the desktop grid; on mobile the panel grows and the
+          page owns the single scroll (no nested scroll-capture). */}
+      <div className="max-h-80 overflow-y-auto space-y-3 p-3 max-lg:max-h-none max-lg:overflow-visible">
         {/* Summary row */}
         <div className="grid grid-cols-2 gap-x-4 gap-y-1 rounded-sm bg-muted/60 p-2 text-xs">
           <div className="flex justify-between">

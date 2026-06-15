@@ -4,9 +4,21 @@ import { PanelShell } from "@/components/layout/PanelShell";
 import type {
   CalibrationBucket,
   CalibrationReport,
+  GateGroup,
   GatesReport,
   GateStatus,
 } from "@/hooks/useCalibration";
+
+// Render order + labels for the criterion groups. Operational = does the
+// machinery behave; Calibration = is confidence trustworthy; Economic = does
+// the edge survive costs. A group with no criteria (e.g. economic on the
+// Observe→Paper gate) is skipped.
+const GROUP_ORDER: GateGroup[] = ["operational", "calibration", "economic"];
+const GROUP_LABEL: Record<GateGroup, string> = {
+  operational: "Operational",
+  calibration: "Calibration",
+  economic: "Economic",
+};
 
 interface Props {
   report: CalibrationReport | null;
@@ -64,17 +76,28 @@ function GateCard({ title, gate }: { title: string; gate: GateStatus }) {
           {gate.ready ? "ready" : "not ready"}
         </span>
       </div>
-      <div className="mt-1.5 space-y-0.5">
-        {gate.criteria.map((c) => (
-          <div key={c.name} className="flex items-center justify-between text-[11px]">
-            <span className={c.passed ? "text-bullish" : "text-muted-foreground"}>
-              {c.passed ? "✓" : "·"} {c.name.replaceAll("_", " ")}
-            </span>
-            <span className="font-mono text-muted-foreground">
-              {c.current} / {c.required}
-            </span>
-          </div>
-        ))}
+      <div className="mt-1.5 space-y-1.5">
+        {GROUP_ORDER.map((group) => {
+          const rows = gate.criteria.filter((c) => c.group === group);
+          if (rows.length === 0) return null;
+          return (
+            <div key={group} className="space-y-0.5">
+              <p className="text-[9px] font-semibold uppercase tracking-wider text-muted-foreground/70">
+                {GROUP_LABEL[group]}
+              </p>
+              {rows.map((c) => (
+                <div key={c.name} className="flex items-center justify-between text-[11px]">
+                  <span className={c.passed ? "text-bullish" : "text-muted-foreground"}>
+                    {c.passed ? "✓" : "·"} {c.name.replaceAll("_", " ")}
+                  </span>
+                  <span className="font-mono text-muted-foreground">
+                    {c.current} / {c.required}
+                  </span>
+                </div>
+              ))}
+            </div>
+          );
+        })}
       </div>
       {gate.deferred.length > 0 && (
         <p className="mt-1.5 text-[10px] leading-relaxed text-muted-foreground/70">
@@ -101,7 +124,7 @@ export function CalibrationPanel({ report, gates }: Props) {
       title="CALIBRATION"
       rightSlot={stats && stats.n > 0 ? `${stats.n} RESOLVED` : undefined}
     >
-      <div className="max-h-[32rem] overflow-y-auto space-y-3 p-3">
+      <div className="max-h-[32rem] overflow-y-auto space-y-3 p-3 max-lg:max-h-none max-lg:overflow-visible">
         {/* Headline ECE */}
         <div className="flex items-baseline justify-between rounded-sm bg-muted/60 p-2">
           <span

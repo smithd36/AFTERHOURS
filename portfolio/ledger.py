@@ -42,6 +42,12 @@ class Portfolio:
         self._daily_pnl: Decimal = Decimal("0")
         self._daily_date: date | None = None
 
+        # Per-close realized P&L (net of entry+exit fees), in close order. The
+        # daily accumulator above forgets the series; the economic-readiness gate
+        # needs it (expectancy, profit factor, drawdown). Rebuilt for free on
+        # restart — rehydrate() replays every order.filled through close_position.
+        self._realized_trades: list[Decimal] = []
+
     async def start(self) -> None:
         self._fill_sub = await self._bus.subscribe(EventType.ORDER_FILLED, self._handle_fill)
         self._tick_sub = await self._bus.subscribe(EventType.MARKET_TICK, self._handle_tick)
@@ -119,6 +125,16 @@ class Portfolio:
 
     def current_price(self, instrument: str) -> Decimal | None:
         return self._prices.get(instrument)
+
+    @property
+    def initial_cash(self) -> Decimal:
+        """Starting paper capital — the base the economic gate sizes drawdown against."""
+        return self._settings.initial_cash
+
+    @property
+    def realized_trades(self) -> list[Decimal]:
+        """Net-of-fee realized P&L per closed round-trip, in close order."""
+        return self._realized_trades
 
     def daily_realized_pnl(self, as_of: datetime) -> Decimal:
         """Realized P&L for the UTC day containing `as_of` (event-time keyed).
@@ -232,6 +248,7 @@ class Portfolio:
 
         self._rollover_if_new_day(event_time)
         self._daily_pnl += realized
+        self._realized_trades.append(realized)
         logger.info("portfolio.position_closed", instrument=instrument,
                     realized_pnl=str(realized), fill_price=str(fill_price))
         return realized

@@ -2,14 +2,25 @@
 
 from __future__ import annotations
 
+from dataclasses import dataclass, field
 from datetime import UTC, datetime
+from decimal import Decimal
 
 import pytest
 
 from calibration.engine import CalibrationEngine
-from calibration.gates import GateTracker
+from calibration.gates import GateTracker, economic_metrics
+from calibration.settings import CalibrationSettings
 from core.bus import InMemoryEventStore, InProcessBus
 from core.schemas.events import EventEnvelope, EventType
+
+
+@dataclass
+class _FakeBook:
+    """Structurally satisfies the TradeBook protocol the economic gate reads."""
+
+    realized_trades: list[Decimal] = field(default_factory=list)
+    initial_cash: Decimal = Decimal("10000")
 
 
 @pytest.fixture
@@ -77,3 +88,70 @@ async def test_stop_loss_closes_are_not_counted(bus: InProcessBus) -> None:
     assert _breach_count(tracker) == "2"
 
     await tracker.stop()
+
+
+# ---------------------------------------------------------------------------
+# Economic readiness (Gate 2) — cost-adjusted round-trip P&L
+# ---------------------------------------------------------------------------
+
+
+def _D(*xs: float) -> list[Decimal]:
+    return [Decimal(str(x)) for x in xs]
+
+
+def test_economic_metrics_math() -> None:
+    """Expectancy, profit factor and drawdown over a known net-of-fee series."""
+    m = economic_metrics(_D(100, -50, 100, -30))
+    assert m["trades"] == 4
+    assert m["net_pnl"] == Decimal("120")
+    assert m["expectancy"] == Decimal("30")  # 120 / 4
+    assert m["win_rate"] == 0.5
+    assert m["profit_factor"] == Decimal("2.5")  # 200 gross win / 80 gross loss
+    # equity curve 100, 50, 150, 120 → worst peak-to-trough is 150→100 = 50
+    assert m["max_drawdown"] == Decimal("50")
+
+
+def test_economic_metrics_no_losses_has_undefined_profit_factor() -> None:
+    m = economic_metrics(_D(40, 60))
+    assert m["profit_factor"] is None  # no losing trade → undefined (treated as inf)
+    assert m["max_drawdown"] == Decimal("0")
+
+
+def test_economic_metrics_empty() -> None:
+    m = economic_metrics([])
+    assert m["trades"] == 0
+    assert m["expectancy"] is None
+
+
+def _econ(tracker: GateTracker) -> dict[str, dict[str, object]]:
+    """Economic-group criteria from the Paper → Assisted report, keyed by name."""
+    return {
+        c["name"]: c
+        for c in tracker.report()["paper_to_assisted"]["criteria"]
+        if c["group"] == "economic"
+    }
+
+
+async def test_economic_gate_blocks_unprofitable_book(bus: InProcessBus) -> None:
+    """A net-negative book must fail the economic gate even with enough trades."""
+    settings = CalibrationSettings(gate_econ_min_trades=2)
+    book = _FakeBook(realized_trades=_D(100, -50, -120))  # net -70
+    tracker = GateTracker(bus, CalibrationEngine(bus), settings=settings, trade_book=book)
+    econ = _econ(tracker)
+    assert econ["closed_trades"]["passed"] is True  # 3 >= 2
+    assert econ["net_pnl"]["passed"] is False
+    assert econ["expectancy"]["passed"] is False
+
+
+async def test_economic_gate_passes_profitable_book(bus: InProcessBus) -> None:
+    settings = CalibrationSettings(gate_econ_min_trades=2, gate_econ_min_profit_factor=1.1)
+    book = _FakeBook(realized_trades=_D(100, -50, 100))  # net 150, PF 4.0
+    tracker = GateTracker(bus, CalibrationEngine(bus), settings=settings, trade_book=book)
+    econ = _econ(tracker)
+    assert all(c["passed"] for c in econ.values())
+
+
+async def test_economic_gate_absent_without_trade_book(bus: InProcessBus) -> None:
+    """No book wired (unit-test path) → no economic criteria, not a silent pass."""
+    tracker = GateTracker(bus, CalibrationEngine(bus))
+    assert _econ(tracker) == {}

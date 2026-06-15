@@ -17,8 +17,12 @@ const MARKET_COLOR: Record<string, string> = {
 };
 
 function FeedDot({ live }: { live: boolean }) {
+  // role+aria-label, not just title: the live/waiting distinction is otherwise
+  // color-only (invisible to screen readers) and title tooltips never fire on touch.
   return (
     <span
+      role="img"
+      aria-label={live ? "live feed" : "waiting for feed"}
       title={live ? "live" : "waiting for feed"}
       className={cn(
         "inline-block h-1.5 w-1.5 flex-shrink-0 rounded-full",
@@ -54,7 +58,9 @@ function EntryRow({
       <td className="px-3 py-1.5 text-right">
         <button
           onClick={() => onRemove(entry.instrument)}
-          className="inline-flex h-6 w-6 items-center justify-center rounded text-[11px] text-muted-foreground opacity-0 transition-opacity group-hover:opacity-100 hover:text-bearish"
+          // Hover-reveal is a desktop nicety; on touch (no hover) and on
+          // keyboard focus the control must be visible, and 44px on coarse pointers.
+          className="inline-flex h-6 w-6 items-center justify-center rounded text-[11px] text-muted-foreground opacity-0 transition-opacity hover:text-bearish group-hover:opacity-100 focus-visible:opacity-100 focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring pointer-coarse:h-11 pointer-coarse:w-11 pointer-coarse:opacity-100"
           title={`Remove ${entry.instrument}`}
           aria-label={`Remove ${entry.instrument}`}
         >
@@ -131,6 +137,13 @@ export function WatchlistPanel({
           onKeyDown={handleKeyDown}
           placeholder="BTC-USD, AAPL…"
           aria-label="Instrument symbol"
+          // Tickers are uppercase, non-dictionary tokens — stop iOS autocaps/correct
+          // from fighting the operator, and label the on-screen return key.
+          autoCapitalize="characters"
+          autoCorrect="off"
+          autoComplete="off"
+          spellCheck={false}
+          enterKeyHint="done"
           className="flex-1 bg-transparent text-xs outline-none focus-visible:ring-1 focus-visible:ring-ring placeholder:text-muted-foreground/40"
           disabled={submitting}
         />

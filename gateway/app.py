@@ -166,7 +166,9 @@ async def default_lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
     calibration_settings = CalibrationSettings()
     resolver = OutcomeResolver(bus, modes=mode_controller, settings=calibration_settings)
     calibration_engine = CalibrationEngine(bus, settings=calibration_settings)
-    gate_tracker = GateTracker(bus, calibration_engine, settings=calibration_settings)
+    gate_tracker = GateTracker(
+        bus, calibration_engine, settings=calibration_settings, trade_book=portfolio
+    )
 
     resolved_events = await store.recent([EventType.DECISION_RESOLVED.value], limit=2000)
     calibration_engine.seed(resolved_events)
