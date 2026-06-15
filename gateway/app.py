@@ -106,7 +106,9 @@ async def default_lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
     thesis_generator = ThesisGenerator(bus, provider, watchlist=watchlist_manager)
     await thesis_generator.start()
 
-    thesis_invalidator = ThesisInvalidator(bus)
+    # store passed so the invalidator can rehydrate active theses after a
+    # restart (otherwise pre-restart theses never expire).
+    thesis_invalidator = ThesisInvalidator(bus, store)
     await thesis_invalidator.start()
 
     # Decision store: tracks all decisions by ID for the REST API

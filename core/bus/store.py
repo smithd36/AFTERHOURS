@@ -36,6 +36,14 @@ class EventStore(Protocol):
     async def append(self, envelope: EventEnvelope) -> None:
         """Durably write the event. Must be idempotent on duplicate id."""
 
+    async def recent(
+        self,
+        event_types: list[str],
+        limit: int = 200,
+        payload_type: list[str] | None = None,
+    ) -> list[EventEnvelope]:
+        """Most-recent `limit` events of the given types, oldest-first."""
+
     async def prune(self, event_types: list[str], before: datetime) -> int:
         """Delete events of the given types older than `before`. Returns count deleted."""
 

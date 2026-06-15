@@ -49,6 +49,32 @@ async def test_thesis_registered_on_create(bus: InProcessBus) -> None:
     await invalidator.stop()
 
 
+async def test_rehydrate_rearms_active_skips_invalidated() -> None:
+    # Persist two theses + an invalidation, then start a fresh invalidator
+    # against the same store — simulating a restart.
+    store = InMemoryEventStore()
+    bus = InProcessBus(store)
+
+    live_id, gone_id = str(uuid4()), str(uuid4())
+    await store.append(_thesis_created(live_id, horizon_hours=4))
+    await store.append(_thesis_created(gone_id, horizon_hours=4))
+    await store.append(EventEnvelope(
+        event_type=EventType.THESIS_INVALIDATED,
+        source="test",
+        event_time=datetime.now(UTC),
+        ingest_time=datetime.now(UTC),
+        payload={"thesis_id": gone_id, "reason": "expired", "instrument": "BTC-USD"},
+    ))
+
+    invalidator = ThesisInvalidator(bus, store)
+    await invalidator.start()
+
+    active = {str(k) for k in invalidator._active}
+    assert live_id in active           # re-armed
+    assert gone_id not in active       # already invalidated, not re-armed
+    await invalidator.stop()
+
+
 async def test_expired_thesis_emits_invalidated(bus: InProcessBus) -> None:
     invalidator = ThesisInvalidator(bus)
     await invalidator.start()
