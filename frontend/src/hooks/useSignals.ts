@@ -15,6 +15,9 @@ export interface SignalRow {
 // Matches the backend /api/events/recent max limit — the panel scrolls, so the
 // cap only bounds memory, not layout.
 const MAX_SIGNALS = 500;
+// price_alert is high-volume and low-value — cap its share so it can't crowd
+// news/alt-data out of the window over a long session. ponytail: raise if too few.
+const PRICE_ALERT_CAP = 50;
 
 interface SignalPayload {
   id: string;
@@ -65,7 +68,14 @@ function reducer(state: SignalRow[], action: Action): SignalRow[] {
     const row = toRow(action.envelope, Date.now());
     if (!row) return state;
     if (state.some((r) => r.id === row.id)) return state;
-    const next = [row, ...state];
+    let next = [row, ...state];
+    // Drop oldest price alerts beyond the cap (next is newest-first), so they
+    // can't dominate the window. O(n), n<=500 — cheap.
+    const alerts = next.filter((r) => r.signalType === "price_alert");
+    if (alerts.length > PRICE_ALERT_CAP) {
+      const drop = new Set(alerts.slice(PRICE_ALERT_CAP).map((r) => r.id));
+      next = next.filter((r) => !drop.has(r.id));
+    }
     return next.length > MAX_SIGNALS ? next.slice(0, MAX_SIGNALS) : next;
   }
   if (action.type === "refilter") {

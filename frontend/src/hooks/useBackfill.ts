@@ -1,11 +1,10 @@
 import { useEffect, useRef } from "react";
 import type { EventEnvelope } from "@/types/core";
 
-// Sparse alt-data subtypes that the high-volume news feed can starve out of a
-// shared signal window. Fetched in their own request (filtered by payload type)
-// so each gets a fair slice of the backfill.
+// Sparse alt-data subtypes that a high-volume feed can starve out of a shared
+// signal window. Kept separate from price_alert (also high-volume) so neither
+// price alerts nor news can bury them.
 const ALT_SIGNAL_TYPES = [
-  "price_alert",
   "insider_tx",
   "congressional_tx",
   "lobbying",
@@ -13,11 +12,12 @@ const ALT_SIGNAL_TYPES = [
   "supply_chain",
 ].join(",");
 
-// Signals are fetched separately at the backend's max limit so high-volume
-// news doesn't crowd out (or get crowded out by) thesis/decision history.
+// Each signal family gets its own window so a high-volume type can't crowd the
+// others out. price_alert is a low-value backlog — keep its window small so old
+// alerts don't refill the feed on mount. ponytail: bump the 50 if you want more.
 const BACKFILL_REQUESTS = [
-  { types: "signal.created", limit: 500 },
-  // Same event type, but only the sparse subtypes — own window so news can't bury them.
+  { types: "signal.created", limit: 500, signalTypes: "news" },
+  { types: "signal.created", limit: 50, signalTypes: "price_alert" },
   { types: "signal.created", limit: 500, signalTypes: ALT_SIGNAL_TYPES },
   {
     types: [
