@@ -8,7 +8,7 @@ A modular monolith that connects live market data, LLM-generated trade theses, a
 
 ## Status
 
-**Phase 5 complete; Phase 6 (alternative-data ingestion) next — 6A signal feeds (enrich-only) then 6B auto-discovery; live trading is now Phase 7 (staged 7A–7D), per [ADR-010](docs/adr/010-roadmap-rescope-alt-data-phase6.md).** Full decision pipeline live end-to-end, with user-managed watchlist, dynamic feed routing across crypto and equity, watchlist-scoped pipeline filtering, and tick retention:
+**Phase 6A complete (2026-06-15); Phase 6B (auto-discovery) next; live trading is Phase 7 (staged 7A–7D), per [ADR-010](docs/adr/010-roadmap-rescope-alt-data-phase6.md).** 6A shipped three free alt-data feeds live — insider (SEC Form 4), government-exposure (lobbying + contracts), and supply-chain (10-K) — all enrich-only into the existing pipeline; congress is built but dormant (no free token) and dark-pool/options is deferred (paid). See [`docs/phase-6a-limitations.md`](docs/phase-6a-limitations.md). Full decision pipeline live end-to-end, with user-managed watchlist, dynamic feed routing across crypto and equity, watchlist-scoped pipeline filtering, and tick retention:
 
 ```
 Kraken WebSocket ─┐
@@ -231,7 +231,7 @@ See [`PLANNING.md`](PLANNING.md) for the full non-negotiables list.
 | **3** ✅ | Risk + Paper | Decision generator, risk engine, kill switch, paper execution, portfolio/ledger, Decision Queue UI |
 | **4** ✅ | Backtest + Calibration | Backtesting engine (event-time replay, no look-ahead), decision outcome resolution, ECE calibration reporting, autonomy gate tracking |
 | **5** ✅ | Watchlist & Multi-Instrument | User-managed watchlist, dynamic feed routing (crypto + equity stub), watchlist-scoped pipeline, tick retention, WatchlistPanel |
-| **6A** | Alt-data signal feeds (enrich-only) | Form 4 / Congress / lobbying+contracts / options-flow / supply-chain pollers → `signal.created`; materiality filters, disclosure-date `event_time`, thesis-seed trigger; trades watched equities only |
+| **6A** ✅ | Alt-data signal feeds (enrich-only) | Live: insider (Form 4) / lobbying+contracts (gov-exposure) / supply-chain pollers → `signal.created`; materiality filters, disclosure-date `event_time`, thesis-seed trigger; trades watched equities only. Congress built but dormant; options-flow deferred (paid) |
 | **6B** | Auto-discovery | High-conviction alt-data auto-adds unwatched names to the watchlist behind caps + liquidity-aware sizing |
 | **7A** | Micro-capital validation | `BrokerAdapter` + Alpaca (paper→live), Assisted-only real orders at $250–500, reconciliation, order state machine, in-flight recovery |
 | **7B** | Execution realism + 2nd venue | Kraken live crypto, venue routing, friction model recalibrated from live fills, per-venue reconciliation |
@@ -248,7 +248,7 @@ Phase 6 (alt-data) rationale and design: [`docs/adr/010-roadmap-rescope-alt-data
 
 **Read-only. Withdrawal-disabled. Never committed.**
 
-Real API keys go in `.env` (gitignored). The `.env.example` template contains no real values. Phases 0–5 use only public WebSocket/REST endpoints; Phase 6 (alt-data) may use free-tier *data* keys (SEC EDGAR needs none; Quiver/Alpaca-data free tiers) but **no exchange/execution key** — that is not needed until live trading in Phase 7.
+Real API keys go in `.env` (gitignored). The `.env.example` template contains no real values. Phases 0–5 use only public WebSocket/REST endpoints. Phase 6A's live feeds use free-tier *data* sources only — SEC EDGAR (insider), Senate LDA + USASpending (gov-exposure), and SEC 10-Ks (supply-chain) need **no key**; equity price data uses a free Alpaca/Polygon data key (`EQUITY_FEED_API_KEY`). Congress (Quiver) would need a free token but is dormant. **No exchange/execution key** is needed until live trading in Phase 7.
 
 See [`docs/adr/003-api-key-security.md`](docs/adr/003-api-key-security.md).
 

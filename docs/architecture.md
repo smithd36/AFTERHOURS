@@ -51,8 +51,12 @@ Market data feeds and signal generators. Feeds run as long-lived async tasks; si
 | `ingestion/alerts/generator.py` | Subscribes to `market.tick`; emits `signal.created` for 24h crosses and short-window % moves; watchlist-gated |
 | `ingestion/alerts/settings.py` | `ALERT_PRICE_MOVE_PCT_THRESHOLD`, `ALERT_COOLDOWN_MINUTES` env config |
 | `ingestion/news/feed.py` | Polls RSS feeds (CoinDesk, CoinTelegraph) every 5 min; watchlist-filtered (skips instruments not in active watchlist; general market news passes through when watchlist is non-empty; all suppressed when watchlist is empty) |
-| `ingestion/news/normalizer.py` | RSS entry → `EventEnvelope(SIGNAL_CREATED)` with keyword-based instrument extraction |
+| `ingestion/news/normalizer.py` | RSS entry → `EventEnvelope(SIGNAL_CREATED)`. Instrument extraction: prose-name map (all crypto + curated high-profile equity brands) plus live-watchlist equity tickers matched as `$cashtags` / all-caps tokens (case-sensitive, so lowercase prose never tags a ticker) |
 | `ingestion/news/settings.py` | `NEWS_FEED_URLS`, `NEWS_POLL_INTERVAL_SECONDS` env config |
+| `ingestion/insider/` | **Alt-data (Phase 6A).** SEC EDGAR Form 4 insider transactions → `signal.created` (`insider_tx`). Free, ≤2-day disclosure; disclosure-date `event_time` (two-clock). The primary 6B discovery substrate |
+| `ingestion/govexposure/` | **Alt-data (Phase 6A).** Senate LDA lobbying + USASpending federal contracts, bundled as one government-exposure feed → `signal.created` (`lobbying`, `gov_contract`) |
+| `ingestion/supplychain/` | **Alt-data (Phase 6A).** 10-K customer-concentration ("Customer X = N% of revenue") dependency disclosures → `signal.created` (`supply_chain`) |
+| `ingestion/congress/` | **Alt-data (Phase 6A — built but dormant).** Quiver STOCK Act / congressional disclosures (`congressional_tx`); inert without a free Quiver token. See `docs/phase-6a-limitations.md` |
 
 ### `reasoning/`
 

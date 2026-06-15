@@ -61,7 +61,7 @@ class NewsFeed:
         self._bus = bus
         self._settings = settings or NewsFeedSettings()
         self._health = FeedHealth(bus, "news")
-        self._normalizer = NewsNormalizer()
+        self._normalizer = NewsNormalizer(watchlist)
         self._transport = transport  # injectable for tests (httpx.MockTransport)
         self._watchlist = watchlist
         # Ordered dict used as an ordered set: insertion order = arrival order.

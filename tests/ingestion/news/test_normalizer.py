@@ -30,6 +30,20 @@ def normalizer() -> NewsNormalizer:
     return NewsNormalizer()
 
 
+class _FakeWatchlist:
+    """Minimal stand-in exposing the two members the normalizer reads."""
+
+    def __init__(self, equities: set[str]) -> None:
+        self._eq = equities
+
+    @property
+    def active_instruments(self) -> frozenset[str]:
+        return frozenset(self._eq)
+
+    def get_market(self, instrument: str) -> str:
+        return "equity" if instrument in self._eq else "crypto"
+
+
 # ---------------------------------------------------------------------------
 # Guard conditions
 # ---------------------------------------------------------------------------
@@ -117,6 +131,43 @@ class TestInstrumentExtraction:
         )
         assert env is not None
         assert "ETH-USD" in env.payload["instruments"]
+
+    def test_extracts_equity_brand_name(self, normalizer: NewsNormalizer) -> None:
+        # Name map works without a watchlist (the feed filters off-watchlist).
+        env = normalizer.normalize(_entry(title="Tesla recalls Cybertrucks", summary=""))
+        assert env is not None
+        assert "TSLA" in env.payload["instruments"]
+
+    def test_extracts_multiword_brand_name(self, normalizer: NewsNormalizer) -> None:
+        env = normalizer.normalize(_entry(title="Rocket Lab wins NASA contract", summary=""))
+        assert env is not None
+        assert "RKLB" in env.payload["instruments"]
+
+
+class TestWatchlistTickerExtraction:
+    def _norm(self, equities: set[str]) -> NewsNormalizer:
+        return NewsNormalizer(watchlist=_FakeWatchlist(equities))  # type: ignore[arg-type]
+
+    def test_matches_cashtag(self) -> None:
+        env = self._norm({"RKLB"}).normalize(_entry(title="Why $RKLB ripped today", summary=""))
+        assert env is not None
+        assert "RKLB" in env.payload["instruments"]
+
+    def test_matches_uppercase_token(self) -> None:
+        env = self._norm({"NVDA"}).normalize(_entry(title="NVDA earnings beat", summary=""))
+        assert env is not None
+        assert "NVDA" in env.payload["instruments"]
+
+    def test_lowercase_prose_does_not_match_ticker(self) -> None:
+        # "gilt" the bond term must not tag GILT (Gilat Satellite Networks).
+        env = self._norm({"GILT"}).normalize(_entry(title="UK gilt yields climbed", summary=""))
+        assert env is not None
+        assert "GILT" not in env.payload["instruments"]
+
+    def test_ticker_not_on_watchlist_is_ignored(self) -> None:
+        env = self._norm({"NVDA"}).normalize(_entry(title="IBM posts soft guidance", summary=""))
+        assert env is not None
+        assert env.payload["instruments"] == []
 
 
 # ---------------------------------------------------------------------------
