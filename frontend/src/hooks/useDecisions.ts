@@ -20,6 +20,7 @@ export interface DecisionRow {
   rejectionReasons: string[];
   stopPrice: string | null;
   receivedAt: number;
+  openedAt: string;  // decision event-clock (ISO) — the position's true age
 }
 
 const MAX_DECISIONS = 50;
@@ -46,6 +47,7 @@ function toRow(envelope: EventEnvelope, status: DecisionRow["status"]): Decision
     rejectionReasons: (risk.rejection_reasons as string[]) ?? [],
     stopPrice: risk.stop_price ? String(risk.stop_price) : null,
     receivedAt: Date.now(),
+    openedAt: String(envelope.event_time ?? ""),
   };
 }
 

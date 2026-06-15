@@ -411,7 +411,7 @@ export default function App() {
       onRemove={watchlistRemove}
     />
   );
-  const portfolio = <PortfolioPanel snapshot={snapshot} />;
+  const portfolio = <PortfolioPanel snapshot={snapshot} decisions={decisions} />;
   const calibration = <CalibrationPanel report={report} gates={gates} />;
 
   const tabs: TabDef[] = [
