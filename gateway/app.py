@@ -37,7 +37,11 @@ from core.logging import configure_logging
 from core.mode import ModeController
 from core.schemas.events import AutonomyMode, EventEnvelope, EventType
 from ingestion.alerts import PriceAlertGenerator
+from ingestion.congress import CongressFeed
 from ingestion.equity import EquityFeed
+from ingestion.govexposure import GovExposureFeed
+from ingestion.insider import InsiderFeed
+from ingestion.supplychain import SupplyChainFeed
 from ingestion.kraken import KrakenFeed
 from ingestion.news import NewsFeed
 from ingestion.pruner import TickPruner
@@ -215,12 +219,68 @@ async def default_lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
     # re-publish headlines already emitted as signals.
     seen_links = {
         sid
-        for e in await store.recent([EventType.SIGNAL_CREATED.value], limit=500)
+        for e in await store.recent(
+            [EventType.SIGNAL_CREATED.value], limit=500, payload_type=["news"]
+        )
         if e.source == "rss_news_feed"
         and (sid := e.payload.get("provenance", {}).get("source_id"))
     }
     news_feed = NewsFeed(bus, initial_seen=seen_links, watchlist=watchlist_manager)
     news_task = asyncio.create_task(news_feed.run(), name="news_feed")
+
+    # Phase 6A: alternative-data ingestion. InsiderFeed (SEC Form 4) emits for all
+    # material filings market-wide; the ThesisGenerator watchlist gate keeps it
+    # enrich-only (ADR-010). No watchlist filter here — unwatched-ticker filings
+    # are still persisted for audit / Phase 6B discovery.
+    seen_accessions = {
+        sid
+        for e in await store.recent(
+            [EventType.SIGNAL_CREATED.value], limit=500, payload_type=["insider_tx"]
+        )
+        if e.source == "sec_edgar_form4"
+        and (sid := e.payload.get("provenance", {}).get("source_id"))
+    }
+    insider_feed = InsiderFeed(bus, initial_seen=seen_accessions)
+    insider_task = asyncio.create_task(insider_feed.run(), name="insider_feed")
+
+    # CongressFeed (Quiver) no-ops without QUIVER_API_TOKEN; same enrich-only path.
+    seen_congress = {
+        sid
+        for e in await store.recent(
+            [EventType.SIGNAL_CREATED.value], limit=500, payload_type=["congressional_tx"]
+        )
+        if e.source == "quiver_congress"
+        and (sid := e.payload.get("provenance", {}).get("source_id"))
+    }
+    congress_feed = CongressFeed(bus, initial_seen=seen_congress)
+    congress_task = asyncio.create_task(congress_feed.run(), name="congress_feed")
+
+    # GovExposureFeed (Senate LDA + USASpending) — per watched-equity, free, no key
+    # required. Inert until the watchlist holds equities. Enrich-only by construction.
+    seen_gov = {
+        sid
+        for e in await store.recent(
+            [EventType.SIGNAL_CREATED.value],
+            limit=1000,
+            payload_type=["lobbying", "gov_contract"],
+        )
+        if e.source in ("senate_lda", "usaspending")
+        and (sid := e.payload.get("provenance", {}).get("source_id"))
+    }
+    govexposure_feed = GovExposureFeed(bus, watchlist_manager, initial_seen=seen_gov)
+    govexposure_task = asyncio.create_task(govexposure_feed.run(), name="govexposure_feed")
+
+    # SupplyChainFeed (10-K customer concentration) — per watched-equity, free, no key.
+    seen_supplychain = {
+        sid
+        for e in await store.recent(
+            [EventType.SIGNAL_CREATED.value], limit=500, payload_type=["supply_chain"]
+        )
+        if e.source == "sec_10k"
+        and (sid := e.payload.get("provenance", {}).get("source_id"))
+    }
+    supplychain_feed = SupplyChainFeed(bus, watchlist_manager, initial_seen=seen_supplychain)
+    supplychain_task = asyncio.create_task(supplychain_feed.run(), name="supplychain_feed")
 
     # Store on app.state so route handlers can access them.
     app.state.bus = bus
@@ -240,7 +300,10 @@ async def default_lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
 
     logger.info("gateway.shutting_down")
 
-    for task in (feed_task, equity_task, news_task):
+    for task in (
+        feed_task, equity_task, news_task, insider_task, congress_task, govexposure_task,
+        supplychain_task,
+    ):
         task.cancel()
         try:
             await task

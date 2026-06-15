@@ -247,6 +247,14 @@ The header bar carries the OBSERVE/PAPER/ASSISTED mode switch (`/api/mode`) and 
 
 Stop-loss: the risk engine watches every tick against open positions' stop prices; a breach emits `risk.limit_breached` and the executor closes the position.
 
+#### Risk-limit gate semantics
+
+The `risk.limit_breached` event is overloaded. Today it is emitted from exactly one place — the stop-loss monitor (`risk/engine.py`, `reason: "stop_loss"`) — which is *normal contained-loss behaviour*, not a violation of the system's hard caps. The genuine hard limits (max open positions, no-pyramiding, daily-loss circuit breaker, affordability) are enforced **pre-trade** and surface as `decision.rejected`; they can never produce a `risk.limit_breached` event because the position is never opened.
+
+The Paper → Assisted graduation gate (`calibration/gates.py`, Appendix B "zero risk-limit breaches") therefore counts only *hard* breaches and **excludes stop-loss closes** (`_is_hard_breach`). Without this, any realistic paper run — which inevitably takes losing trades that hit their stops — would keep the gate at "not ready" forever, treating the safety mechanism doing its job as evidence against graduation. As wired, the deferred consequence is that the counter currently has no event that can ever increment it (all true hard-limit conditions are prevented pre-trade), so the criterion reads 0 by construction.
+
+**Option B (deferred):** split the event — emit a distinct `risk.stop_triggered` for stop-loss closes and reserve `risk.limit_breached` for genuine post-fill cap violations (e.g. if a future limit can be breached *after* a position is open: a trailing exposure cap, a portfolio-level drawdown halt, a reconciliation mismatch). At that point the reason-string filter is no longer sufficient and the two concepts deserve separate event types. This touches the `EventType` enum, the executor's `risk.limit_breached` subscription (which closes positions), the frontend `core.ts` union, and `useCalibration` refetch triggers — hence deferred until a real post-fill limit exists to justify it. Until then, the reason filter is the lazy correct behaviour.
+
 ### Outcome resolution (Phase 4)
 
 ```

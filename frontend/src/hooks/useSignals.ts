@@ -7,6 +7,7 @@ export interface SignalRow {
   instruments: string[];
   summary: string;           // title for news, summary text for price alerts
   sourceDomain: string;      // e.g. "coindesk.com" — empty for price alerts
+  url: string;               // canonical link to source doc — empty if none
   eventTime: string;         // ISO-8601 — used for display age
   receivedAt: number;        // Date.now() — used for ordering
 }
@@ -19,7 +20,7 @@ interface SignalPayload {
   id: string;
   type: string;
   instruments: string[];
-  provenance: { event_time: string };
+  provenance: { event_time: string; url?: string | null };
   payload: {
     summary?: string;
     title?: string;
@@ -45,6 +46,7 @@ function toRow(envelope: EventEnvelope, receivedAt: number): SignalRow | null {
     instruments: sp.instruments ?? [],
     summary,
     sourceDomain: p.source_domain ?? "",
+    url: sp.provenance?.url ?? "",
     eventTime: sp.provenance?.event_time ?? envelope.event_time,
     receivedAt,
   };

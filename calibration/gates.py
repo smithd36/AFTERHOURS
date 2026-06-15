@@ -27,6 +27,22 @@ logger = structlog.get_logger(__name__)
 # they count toward the paper sample (PLANNING §5 modes 2–3).
 _PAPER_MODES = {"paper", "assisted"}
 
+# `risk.limit_breached` is overloaded: today it is emitted *only* by the
+# stop-loss monitor, which is normal contained-loss behaviour, not a breach of
+# the system's hard caps. Appendix B's "zero risk-limit breaches" means the
+# deterministic caps (size/exposure/daily-loss) were never violated — those are
+# enforced pre-trade and surface as `decision.rejected`, never here. So the gate
+# counts only genuine breaches and ignores stop-loss closes; otherwise any
+# realistic paper run (which takes losing trades that hit stops) blocks
+# Paper → Assisted forever. See docs/architecture.md "Risk-limit gate semantics"
+# for why a future event split (option B) may be warranted.
+_STOP_LOSS_REASON = "stop_loss"
+
+
+def _is_hard_breach(envelope: EventEnvelope) -> bool:
+    """True only for genuine hard-limit violations, not stop-loss closes."""
+    return envelope.payload.get("reason") != _STOP_LOSS_REASON
+
 
 def _criterion(
     name: str, required: str, current: str, passed: bool
@@ -55,9 +71,9 @@ class GateTracker:
         Paper → Assisted "0 breaches" criterion silently *passes* despite real
         prior breaches — forgetting evidence in the safe direction. Seed before
         :meth:`start` so historical breaches aren't double-counted against live
-        ones.
+        ones. Stop-loss closes are excluded (see ``_is_hard_breach``).
         """
-        self._limit_breaches = sum(1 for _ in breaches)
+        self._limit_breaches = sum(1 for e in breaches if _is_hard_breach(e))
         logger.info("gate_tracker.seeded", limit_breaches=self._limit_breaches)
 
     async def start(self) -> None:
@@ -71,7 +87,8 @@ class GateTracker:
         logger.info("gate_tracker.stopped")
 
     async def _handle_breach(self, envelope: EventEnvelope) -> None:
-        self._limit_breaches += 1
+        if _is_hard_breach(envelope):
+            self._limit_breaches += 1
 
     def report(self) -> dict[str, Any]:
         return {

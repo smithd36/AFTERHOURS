@@ -59,6 +59,17 @@ class TestRecent:
         result = await store.recent(["signal.created"], limit=2)
         assert [e.payload["id"] for e in result] == ["s3", "s4"]
 
+    async def test_payload_type_filter(self, store: SqliteEventStore) -> None:
+        # News dominates; payload_type isolates the sparse alt-data subtype.
+        for i in range(5):
+            await store.append(_envelope("signal.created", i, {"type": "news"}))
+        await store.append(_envelope("signal.created", 5, {"type": "supply_chain"}))
+
+        result = await store.recent(
+            ["signal.created"], limit=10, payload_type=["supply_chain", "insider_tx"]
+        )
+        assert [e.payload["type"] for e in result] == ["supply_chain"]
+
     async def test_round_trips_envelope_fields(self, store: SqliteEventStore) -> None:
         original = _envelope("thesis.created", 0, {"id": "t1", "nested": {"k": "v"}})
         await store.append(original)

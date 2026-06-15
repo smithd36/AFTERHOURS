@@ -73,7 +73,7 @@ export function WatchlistPanel({
   onRemove,
 }: WatchlistPanelProps) {
   const [input, setInput] = useState("");
-  const [market, setMarket] = useState<"crypto" | "equity">("crypto");
+  const [market, setMarket] = useState<"crypto" | "equity">("equity");
   const [submitting, setSubmitting] = useState(false);
   const [addError, setAddError] = useState<string | null>(null);
   const [search, setSearch] = useState("");

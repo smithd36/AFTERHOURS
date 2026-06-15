@@ -17,6 +17,7 @@ import {
 import { cn } from "@/lib/utils";
 import { CalibrationPanel } from "@/components/panels/CalibrationPanel";
 import { DecisionQueue } from "@/components/panels/DecisionQueue";
+import { FeedHealthBar } from "@/components/panels/FeedHealthBar";
 import { MarketWatch } from "@/components/panels/MarketWatch";
 import { PortfolioPanel } from "@/components/panels/PortfolioPanel";
 import { SignalFeed } from "@/components/panels/SignalFeed";
@@ -26,6 +27,7 @@ import { useBackfill } from "@/hooks/useBackfill";
 import { useCalibration } from "@/hooks/useCalibration";
 import { useDecisions } from "@/hooks/useDecisions";
 import { useEventStream } from "@/hooks/useEventStream";
+import { useFeedHealth } from "@/hooks/useFeedHealth";
 import { useMarketTicks } from "@/hooks/useMarketTicks";
 import { usePortfolio } from "@/hooks/usePortfolio";
 import { useSignals } from "@/hooks/useSignals";
@@ -347,6 +349,7 @@ export default function App() {
   const { signals, handleEnvelope: handleSignal } = useSignals(activeInstruments);
   const { theses, handleEnvelope: handleThesis } = useTheses(activeInstruments);
   const { decisions, handleEnvelope: handleDecision } = useDecisions(activeInstruments);
+  const { feeds: feedHealth, handleEnvelope: handleFeedHealth } = useFeedHealth();
 
   const handleEnvelope = useCallback(
     (envelope: EventEnvelope) => {
@@ -356,8 +359,17 @@ export default function App() {
       handleDecision(envelope);
       handleCalibration(envelope);
       handleWatchlist(envelope);
+      handleFeedHealth(envelope);
     },
-    [handleTick, handleSignal, handleThesis, handleDecision, handleCalibration, handleWatchlist],
+    [
+      handleTick,
+      handleSignal,
+      handleThesis,
+      handleDecision,
+      handleCalibration,
+      handleWatchlist,
+      handleFeedHealth,
+    ],
   );
 
   const { connected } = useEventStream(handleEnvelope);
@@ -443,6 +455,8 @@ export default function App() {
           <ConnectionPip connected={connected} />
         </div>
       </header>
+
+      <FeedHealthBar feeds={feedHealth} />
 
       {isDesktop ? (
         <main className="flex-1 overflow-auto p-4">

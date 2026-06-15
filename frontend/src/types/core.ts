@@ -45,6 +45,11 @@ export type SignalType =
   | "on_chain"
   | "economic_event"
   | "sentiment"
+  | "insider_tx"
+  | "congressional_tx"
+  | "lobbying"
+  | "gov_contract"
+  | "supply_chain"
   | "custom";
 
 export interface Signal {

@@ -76,9 +76,11 @@ worked out in planning and is summarised in the Decision below.
 ### Positive
 - Live trading is de-risked by a larger calibration sample before the first real dollar, matching
   the "autonomy is earned" doctrine (PLANNING §5, §11).
-- Phase 6 needs **no exchange/execution keys** — at most free-tier *data* keys (SEC EDGAR needs
-  none; Quiver/Alpaca-data free tiers). The no-execution-secrets posture of Phases 0–5 extends
-  through Phase 6.
+- Phase 6 needs **no exchange/execution keys** — at most *data* keys, and the three live feeds need
+  none (SEC EDGAR/USASpending/Senate LDA are keyless and free). The no-execution-secrets posture of
+  Phases 0–5 extends through Phase 6. (Congress is the exception and is deferred: Quiver went paid
+  post-decision, so it ships dormant — see [`docs/phase-6a-limitations.md`](../phase-6a-limitations.md)
+  § Congress.)
 - Each alt-data feed is off the critical path and degrades gracefully (swallow-and-log,
   `system.feed_degraded`); a dead alt-data feed never affects price feeds or open positions.
 - Auto-discovery is captured as a planned, gated phase rather than smuggled into the first pass.
@@ -89,6 +91,9 @@ worked out in planning and is summarised in the Decision below.
   signals must drive `swing`/`position` horizons, not `intraday`.
 - Alt-data steers toward illiquid small-caps; the risk engine is currently liquidity-blind, so
   liquidity-aware sizing is a prerequisite for 6B (and a caveat even in 6A enrich-only).
+- Each shipped 6A feed carries deliberate scope limits (completeness, name-matching fidelity,
+  coarse 10-K extraction, sparse-signal windowing, …). They are catalogued per feed, with impact
+  and upgrade path, in [`docs/phase-6a-limitations.md`](../phase-6a-limitations.md).
 
 ## Phase-number mapping for earlier documents
 

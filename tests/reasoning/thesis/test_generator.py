@@ -88,6 +88,39 @@ async def test_thesis_emitted_when_enough_signals(bus: InProcessBus) -> None:
 
     assert len(received) == 1
     assert received[0].payload["instrument"] == "BTC-USD"
+
+
+async def test_single_insider_signal_seeds_thesis(bus: InProcessBus) -> None:
+    # An alt-data (insider) signal triggers a thesis on its own, even though
+    # min_signals_to_trigger=3 would suppress a lone price_alert (Phase 6A
+    # thesis-seed trigger, ADR-010).
+    settings = ThesisSettings(min_signals_to_trigger=3, signal_window_minutes=15, cooldown_minutes=60)
+    provider = StubProvider()
+    generator = ThesisGenerator(bus, provider, settings)
+    await generator.start()
+
+    received: list[EventEnvelope] = []
+    await bus.subscribe(EventType.THESIS_CREATED, lambda e: received.append(e) or None)  # type: ignore[func-returns-value]
+
+    now = datetime.now(UTC)
+    await bus.publish(EventEnvelope(
+        event_type=EventType.SIGNAL_CREATED,
+        source="sec_edgar_form4",
+        event_time=now,
+        ingest_time=now,
+        payload={
+            "id": "sig-ins",
+            "type": "insider_tx",
+            "instruments": ["AAPL"],
+            "provenance": {"event_time": now.isoformat(), "ingest_time": now.isoformat()},
+            "payload": {"summary": "Form 4 insider buy: CEO purchased $2M of AAPL", "direction": "buy"},
+        },
+    ))
+
+    await generator.stop()
+
+    assert len(received) == 1
+    assert len(provider.calls) == 1
     assert received[0].payload["direction"] == "long"
     assert provider.calls  # LLM was called
 

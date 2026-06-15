@@ -22,6 +22,7 @@ import httpx
 import structlog
 
 from core.bus.base import Bus
+from ingestion.health import FeedHealth
 
 from .normalizer import NewsNormalizer
 from .settings import NewsFeedSettings
@@ -59,6 +60,7 @@ class NewsFeed:
     ) -> None:
         self._bus = bus
         self._settings = settings or NewsFeedSettings()
+        self._health = FeedHealth(bus, "news")
         self._normalizer = NewsNormalizer()
         self._transport = transport  # injectable for tests (httpx.MockTransport)
         self._watchlist = watchlist
@@ -99,10 +101,13 @@ class NewsFeed:
             for url in self._settings.feed_urls:
                 try:
                     await self._fetch(client, url)
+                    self._health.fetch_ok()
                 except asyncio.CancelledError:
                     raise
-                except Exception:
-                    logger.warning("news_feed.fetch_failed", url=url)
+                except Exception as exc:
+                    logger.warning("news_feed.fetch_failed", url=url, error=str(exc))
+                    self._health.fetch_failed(str(exc))
+            await self._health.commit()
 
     async def _fetch(self, client: httpx.AsyncClient, url: str) -> None:
         resp = await client.get(url)

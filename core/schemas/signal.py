@@ -26,6 +26,11 @@ class SignalType(str, Enum):
     ON_CHAIN = "on_chain"
     ECONOMIC_EVENT = "economic_event"
     SENTIMENT = "sentiment"
+    INSIDER_TX = "insider_tx"  # SEC Form 4 insider transaction (Phase 6A alt-data)
+    CONGRESSIONAL_TX = "congressional_tx"  # STOCK Act disclosure (Phase 6A alt-data)
+    LOBBYING = "lobbying"  # Senate LDA lobbying disclosure (Phase 6A alt-data)
+    GOV_CONTRACT = "gov_contract"  # USASpending federal contract award (Phase 6A alt-data)
+    SUPPLY_CHAIN = "supply_chain"  # 10-K customer-concentration dependency (Phase 6A alt-data)
     CUSTOM = "custom"
 
 

@@ -22,7 +22,7 @@ import structlog
 
 from core.bus.base import Bus, Subscription
 from core.schemas.events import EventEnvelope, EventType
-from core.schemas.signal import Thesis, ThesisStatus
+from core.schemas.signal import SignalType, Thesis, ThesisStatus
 from reasoning.llm.base import LLMProvider
 
 from .prompt import build_thesis_messages
@@ -35,6 +35,19 @@ if TYPE_CHECKING:
 logger = structlog.get_logger(__name__)
 
 _JSON_RE = re.compile(r"\{[\s\S]*\}", re.MULTILINE)
+
+# Alt-data signals are sparse and high-conviction (a daily/weekly disclosure
+# never accumulates enough to fill the high-frequency window). A single one of
+# these seeds a thesis on its own — the materiality filter lives in the feed's
+# normalizer, so by the time it reaches here it is already worth acting on.
+# See ADR-010 (Phase 6A, thesis-seed trigger).
+_SEED_SIGNAL_TYPES: frozenset[str] = frozenset(
+    {
+        SignalType.INSIDER_TX.value,
+        SignalType.CONGRESSIONAL_TX.value,
+        SignalType.GOV_CONTRACT.value,  # directional revenue event; lobbying is contextual, not a seed
+    }
+)
 
 
 def _extract_json(text: str) -> dict[str, Any] | None:
@@ -97,6 +110,7 @@ class ThesisGenerator:
         payload = envelope.payload
         instruments: list[str] = payload.get("instruments", [])
         now = envelope.ingest_time
+        is_seed = payload.get("type") in _SEED_SIGNAL_TYPES
 
         for instrument in instruments:
             if self._watchlist is not None and instrument not in self._watchlist.active_instruments:
@@ -108,7 +122,7 @@ class ThesisGenerator:
             while buf and buf[0][0] < cutoff:
                 buf.popleft()
 
-            if len(buf) >= self._settings.min_signals_to_trigger:
+            if len(buf) >= self._settings.min_signals_to_trigger or is_seed:
                 if self._cooldown_ok(instrument, now):
                     await self._generate(instrument, list(buf), now)
 

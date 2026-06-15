@@ -61,9 +61,17 @@ class InMemoryEventStore:
         self.events.append(envelope)
 
     async def recent(
-        self, event_types: list[str], limit: int = 200
+        self,
+        event_types: list[str],
+        limit: int = 200,
+        payload_type: list[str] | None = None,
     ) -> list[EventEnvelope]:
-        matching = [e for e in self.events if e.event_type in event_types]
+        matching = [
+            e
+            for e in self.events
+            if e.event_type in event_types
+            and (payload_type is None or e.payload.get("type") in payload_type)
+        ]
         return matching[-limit:]
 
     async def range(
@@ -144,28 +152,47 @@ class SqliteEventStore:
         )
 
     async def recent(
-        self, event_types: list[str], limit: int = 200
+        self,
+        event_types: list[str],
+        limit: int = 200,
+        payload_type: list[str] | None = None,
     ) -> list[EventEnvelope]:
         """
-        The newest `limit` events of the given types, in chronological order.
+        The most-recently-*ingested* `limit` events of the given types, in
+        chronological order. `payload_type`, when given, further restricts to
+        events whose payload `type` is in the list — used to give sparse signal
+        subtypes (alt-data) their own backfill window so high-volume news can't
+        crowd them out of the shared limit.
 
         Used by the gateway to rehydrate UI panels on page load — clients
         replay these through the same reducers that handle live WS events.
+        Ordered by ingest_time (arrival), not event_time: this is a display /
+        ops view of "what arrived recently" (two-clock rule), so alt-data whose
+        event_time is the disclosure date (a 10-K filed months ago, a 30–45-day-
+        stale congressional report) still surfaces instead of being pinned below
+        a wall of fresh news. Backtests use range(), which orders by event_time.
         """
         if not event_types:
             return []
 
         placeholders = ", ".join("?" * len(event_types))
+        clauses = [f"event_type IN ({placeholders})"]
+        params: list[str | int] = list(event_types)
+        if payload_type:
+            type_ph = ", ".join("?" * len(payload_type))
+            clauses.append(f"json_extract(payload, '$.type') IN ({type_ph})")
+            params.extend(payload_type)
+        params.append(limit)
         cursor = await self._conn.execute(
             f"""
             SELECT id, event_type, source, schema_version,
                    event_time, ingest_time, correlation_id, payload
             FROM events
-            WHERE event_type IN ({placeholders})
-            ORDER BY event_time DESC
+            WHERE {" AND ".join(clauses)}
+            ORDER BY ingest_time DESC
             LIMIT ?
             """,
-            (*event_types, limit),
+            params,
         )
         rows = await cursor.fetchall()
         await cursor.close()
