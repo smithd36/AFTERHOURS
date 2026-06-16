@@ -36,6 +36,9 @@ Decision Queue (operator approve/reject in Assisted mode), portfolio panel,
 CalibrationPanel (headline ECE, reliability bars, gate progress), and
 WatchlistPanel (add/remove instruments at runtime; live feed-status indicator per instrument).
 LLM provider is pluggable: Groq · Mistral · OpenRouter (free) or Anthropic · OpenAI · Ollama.
+Outbound LLM calls are burst-throttled (per-minute token bucket + concurrency cap) with
+Retry-After-aware backoff, so free-tier per-minute limits don't drop theses/decisions — tune via
+`LLM_MAX_RPM` / `LLM_MAX_CONCURRENCY` (see [`docs/development.md`](docs/development.md) → LLM Providers — Rate Limiting & Resilience).
 Backtest CLI: `python -m backtest [--from DATE] [--to DATE] [--llm replay|live]`.
 
 **Pre-Phase-6 hardening (blockers cleared, 2026-06-12):** the paper system has been hardened to

@@ -78,14 +78,23 @@ def test_create_provider_openai() -> None:
     assert isinstance(provider, OpenAIProvider)
 
 
+def _unwrap(provider):
+    """Free OpenAI-compatible providers are throttle-wrapped by default."""
+    from reasoning.llm import ThrottledProvider
+    return provider.inner if isinstance(provider, ThrottledProvider) else provider
+
+
 def test_create_provider_groq() -> None:
     pytest.importorskip("openai")
     if not os.environ.get("GROQ_API_KEY"):
         pytest.skip("GROQ_API_KEY not set")
+    from reasoning.llm import ThrottledProvider
     from reasoning.llm.providers.openai_compatible import OpenAICompatibleProvider
     settings = LLMSettings(provider="groq")
     provider = create_provider(settings)
-    assert isinstance(provider, OpenAICompatibleProvider)
+    # groq is throttled by default (LLM_MAX_RPM auto → 25)
+    assert isinstance(provider, ThrottledProvider)
+    assert isinstance(_unwrap(provider), OpenAICompatibleProvider)
 
 
 def test_create_provider_mistral() -> None:
@@ -95,7 +104,7 @@ def test_create_provider_mistral() -> None:
     from reasoning.llm.providers.openai_compatible import OpenAICompatibleProvider
     settings = LLMSettings(provider="mistral")
     provider = create_provider(settings)
-    assert isinstance(provider, OpenAICompatibleProvider)
+    assert isinstance(_unwrap(provider), OpenAICompatibleProvider)
 
 
 def test_create_provider_openrouter() -> None:
@@ -104,6 +113,17 @@ def test_create_provider_openrouter() -> None:
         pytest.skip("OPENROUTER_API_KEY not set")
     from reasoning.llm.providers.openai_compatible import OpenAICompatibleProvider
     settings = LLMSettings(provider="openrouter")
+    provider = create_provider(settings)
+    assert isinstance(_unwrap(provider), OpenAICompatibleProvider)
+
+
+def test_create_provider_throttle_disabled() -> None:
+    # LLM_MAX_RPM=0 → no throttle wrapper, even for a free provider.
+    pytest.importorskip("openai")
+    if not os.environ.get("GROQ_API_KEY"):
+        pytest.skip("GROQ_API_KEY not set")
+    from reasoning.llm.providers.openai_compatible import OpenAICompatibleProvider
+    settings = LLMSettings(provider="groq", max_rpm=0)
     provider = create_provider(settings)
     assert isinstance(provider, OpenAICompatibleProvider)
 

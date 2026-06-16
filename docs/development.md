@@ -178,6 +178,10 @@ rm afterhours.db afterhours.db-wal afterhours.db-shm 2>/dev/null; true
 | `CALIBRATION_GATE_*` | Appendix B | Graduation-gate thresholds (see `.env.example`) |
 | `ALERT_COOLDOWN_MINUTES` | `10` | Min gap between repeat alerts of the same type |
 | `LLM_PROVIDER` | `ollama` | `ollama` \| `groq` \| `mistral` \| `openrouter` \| `anthropic` \| `openai` |
+| `LLM_MAX_RPM` | `-1` (auto) | Client-side requests/min ceiling (token bucket). `-1` = 25 for groq/mistral/openrouter, 0 elsewhere; `0` disables throttling |
+| `LLM_MAX_CONCURRENCY` | `3` | Max simultaneous in-flight LLM calls (applied only when throttling is active) |
+| `LLM_MAX_RETRIES` | `6` | 429 / transient-5xx retry budget, Retry-After-aware (OpenAI-compatible providers) |
+| `LLM_JSON_MODE` | `true` | `response_format=json_object` on OpenAI-compatible providers; set `false` for models that reject it |
 | `THESIS_MIN_SIGNALS_TO_TRIGGER` | `3` | Signals per instrument needed to trigger a thesis |
 | `THESIS_SIGNAL_WINDOW_MINUTES` | `15` | Window the trigger count must fall within |
 | `RISK_*` | see `risk/settings.py` | Position/loss limits, stop-loss distance |
@@ -193,6 +197,44 @@ rm afterhours.db afterhours.db-wal afterhours.db-shm 2>/dev/null; true
 | `TICK_PRUNE_INTERVAL_HOURS` | `24` | How often `TickPruner` runs |
 
 Variables are loaded from `.env` by pydantic-settings. All settings classes use `env_prefix` matching their module (e.g., `COINBASE_*` for `CoinbaseFeedSettings`). `.env.example` documents every variable.
+
+---
+
+## LLM Providers — Rate Limiting & Resilience
+
+Signal bursts (many instruments firing theses/decisions at once) can spike well past a provider's **per-minute** limit even when daily volume is tiny — this is the usual cause of free-tier `429`s. The LLM layer smooths and absorbs those bursts so a transient limit doesn't drop a thesis or decision.
+
+**Where it sits.** `create_provider()` wraps the real provider in a `ThrottledProvider` (`reasoning/llm/throttle.py`), and `gateway/app.py` wraps *that* in `CachingProvider`:
+
+```
+CachingProvider → ThrottledProvider → {OpenAICompatible | Anthropic | OpenAI | Ollama}
+```
+
+Because the throttle sits **inside** the cache, a cache hit (replays, repeated prompts) returns immediately and never consumes a rate-limit permit.
+
+**Three mechanisms:**
+
+1. **Throttle (`ThrottledProvider`).** A requests-per-minute token bucket plus a concurrency semaphore. Bursts *queue* instead of slamming the provider. Tuned by `LLM_MAX_RPM` / `LLM_MAX_CONCURRENCY`. The bucket starts full, so a burst up to `LLM_MAX_RPM` is allowed immediately, then paced. Auto-enabled (25 rpm) for the free providers `groq`/`mistral`/`openrouter`; off for `ollama`/`anthropic`/`openai` unless you set `LLM_MAX_RPM` explicitly.
+2. **Retry-After backoff (`OpenAICompatibleProvider`).** The OpenAI SDK's built-in retries are disabled (`max_retries=0`) so we own the loop and can read the rate-limit headers. A `429` is retried up to `LLM_MAX_RETRIES` times, honoring the `Retry-After` header (falling back to exponential backoff + jitter); transient 5xx/connection errors get plain backoff.
+3. **JSON mode (`LLM_JSON_MODE`).** `response_format=json_object` makes the model emit valid JSON first try, cutting the generators' parse-retry round-trips (which otherwise silently double some calls).
+
+**Diagnosing 429s.** Every rate-limited attempt logs an `llm.rate_limited` event with the actual bucket, so you can see *which* limit you hit:
+
+```
+llm.rate_limited  model=… attempt=1 retry_in_s=2.0
+  limit_requests=30 remaining_requests=0      ← RPM hit → lower LLM_MAX_RPM
+  limit_tokens=6000 remaining_tokens=5200     ← (TPM headroom fine here)
+  retry_after=2
+```
+
+If `remaining_requests` hits 0 it's a requests-per-minute limit (lower `LLM_MAX_RPM`); if `remaining_tokens` hits 0 it's tokens-per-minute.
+
+### Caveats
+
+- **`LLM_MAX_RPM` defaults assume one provider account per process.** Provider rate limits are enforced **per-account (organization), not per-API-key** — multiple keys under one account share one bucket. If N instances share a single free account, set each box's `LLM_MAX_RPM` so the **sum** stays under the account's ceiling (e.g. 3 boxes on one Groq account ≈ `LLM_MAX_RPM=8` each, not the 25 default). Give each instance its own account to use the full default.
+- **JSON mode is provider-dependent.** Groq and Mistral support `response_format=json_object`; some OpenRouter models reject it and return a `400`. Set `LLM_JSON_MODE=false` for those.
+- **The throttle is a smoother, not a multiplier.** It paces you under a limit; it does not raise it. If you're genuinely over a provider's sustained capacity, you need a higher tier, more accounts, or a different provider.
+- **Anthropic/OpenAI/Ollama are unthrottled by default.** They have generous limits (paid) or none (local). Set `LLM_MAX_RPM` > 0 to throttle them too.
 
 ---
 

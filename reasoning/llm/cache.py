@@ -67,9 +67,7 @@ class JsonFileLLMCache:
             "recorded_at": datetime.now(UTC).isoformat(),
         }
         tmp = self._path.with_suffix(".tmp")
-        tmp.write_text(
-            json.dumps(self._data, ensure_ascii=False, indent=1), encoding="utf-8"
-        )
+        tmp.write_text(json.dumps(self._data, ensure_ascii=False, indent=1), encoding="utf-8")
         os.replace(tmp, self._path)
 
 

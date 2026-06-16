@@ -39,6 +39,20 @@ class LLMSettings(BaseSettings):
     ollama_base_url: str = "http://localhost:11434"
     max_tokens: int = 1024
     temperature: float = 0.3
+
+    # --- Outbound rate control (smooths bursts against per-minute provider limits) ---
+    # max_rpm: requests-per-minute ceiling, enforced client-side by a token bucket.
+    #   -1 = auto: 25 for the free OpenAI-compatible providers (groq/mistral/
+    #   openrouter), which have tight RPM; 0 (no throttle) for the rest. 0 disables.
+    max_rpm: int = -1
+    # Max simultaneous in-flight LLM calls (applied only when throttling is active).
+    max_concurrency: int = 3
+    # Retry budget for 429 / transient 5xx on OpenAI-compatible providers
+    # (Retry-After-aware backoff lives in OpenAICompatibleProvider).
+    max_retries: int = 6
+    # JSON mode (response_format=json_object) — cuts parse-retry round-trips on
+    # providers that support it (Groq, Mistral). Disable for models that reject it.
+    json_mode: bool = True
     # Record/replay cache — kept outside the (disposable) event DB so recorded
     # responses survive DB resets and power deterministic backtests.
     cache_path: str = "llm_cache.json"

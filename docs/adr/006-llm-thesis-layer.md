@@ -109,3 +109,31 @@ a parseable UUID are silently skipped rather than failing the generation.
 - **Phase 4 (execution):** consider switching the default to a faster/cheaper
   provider for high-frequency thesis updates, or adding a "thesis refresh" path
   that updates confidence as new signals arrive.
+
+---
+
+## Addendum (2026-06-16): JSON mode + outbound rate limiting
+
+Two refinements after observing free-tier behaviour in multi-instance data collection.
+Neither reverses the original decisions; both are additive and opt-out.
+
+**1. Native JSON mode is now used where available, with prompt-level extraction retained
+as the fallback.** Decision #2 (prompt-level JSON, *no* provider-specific JSON modes) was
+chosen for uniform code paths. In practice the OpenAI-compatible providers (Groq, Mistral)
+support `response_format=json_object`, which makes valid JSON on the first try and removes
+most of the one-retry round-trips — meaningful when those retries were doubling calls against
+a tight per-minute rate limit. So `OpenAICompatibleProvider` now sets `response_format` by
+default (`LLM_JSON_MODE`, default on). The prompt-level `_extract_json` + one-retry path is
+**unchanged** and still runs — it remains the cross-provider contract (and the only path for
+Ollama/Anthropic, which don't go through this provider). Caveat: some OpenRouter models reject
+`response_format` with a `400`; set `LLM_JSON_MODE=false` for those.
+
+**2. Client-side rate limiting + Retry-After backoff.** Free-tier `429`s turned out to be
+*per-minute* (RPM/TPM) limits tripped by signal bursts, not the daily caps. The provider chain
+is now `CachingProvider → ThrottledProvider → <provider>`: a requests-per-minute token bucket +
+concurrency cap (`reasoning/llm/throttle.py`, auto-on for the free providers) smooths bursts,
+and `OpenAICompatibleProvider` owns a Retry-After-aware retry loop that logs the rate-limit
+headers (`llm.rate_limited`). The throttle sits *inside* the cache, so cache hits never wait.
+Key caveat: provider limits are **per-account, not per-key** — instances sharing one free
+account share one bucket, so `LLM_MAX_RPM` must be split across them. Full operational detail
+and tuning: `docs/development.md` → *LLM Providers — Rate Limiting & Resilience*.
