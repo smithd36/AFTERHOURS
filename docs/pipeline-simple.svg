@@ -1,0 +1,69 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 900 1010" width="900" height="1010" font-family="Segoe UI, system-ui, -apple-system, sans-serif">
+  <!-- canvas -->
+  <rect x="0" y="0" width="900" height="1010" fill="#fbfaf7"/>
+  <rect x="0.5" y="0.5" width="899" height="1009" fill="none" stroke="#ece8df" stroke-width="1"/>
+
+  <!-- title -->
+  <text x="450" y="52" text-anchor="middle" font-size="28" font-weight="800" fill="#1f2937">How AFTERHOURS works</text>
+  <text x="450" y="82" text-anchor="middle" font-size="14.5" fill="#6b7280">A plain-language tour — from watching the market to grading its own calls.</text>
+
+  <!-- timeline spine (behind cards) -->
+  <line x1="130" y1="176" x2="130" y2="872" stroke="#dcd6c9" stroke-width="3"/>
+
+  <!-- ===== Card 1 ===== -->
+  <rect x="80" y="130" width="740" height="92" rx="14" fill="#ffffff" stroke="#e7e3da" stroke-width="1.5"/>
+  <text x="235" y="170" font-size="17" font-weight="700" fill="#1f2937">Watch the market</text>
+  <text x="235" y="194" font-size="12.5" fill="#6b7280">It follows live prices and news around the clock.</text>
+  <text x="183" y="187" font-size="30">📡</text>
+
+  <!-- ===== Card 2 ===== -->
+  <rect x="80" y="246" width="740" height="92" rx="14" fill="#ffffff" stroke="#e7e3da" stroke-width="1.5"/>
+  <text x="235" y="286" font-size="17" font-weight="700" fill="#1f2937">Spot something worth a look</text>
+  <text x="235" y="310" font-size="12.5" fill="#6b7280">It flags unusual price moves and fresh headlines.</text>
+  <text x="183" y="303" font-size="30">🔎</text>
+
+  <!-- ===== Card 3 ===== -->
+  <rect x="80" y="362" width="740" height="92" rx="14" fill="#ffffff" stroke="#e7e3da" stroke-width="1.5"/>
+  <text x="235" y="402" font-size="17" font-weight="700" fill="#1f2937">Form a view</text>
+  <text x="235" y="426" font-size="12.5" fill="#6b7280">The AI weighs the clues and takes a view — up, down, or stay out — plus how confident it is.</text>
+  <text x="183" y="419" font-size="30">🧠</text>
+
+  <!-- ===== Card 4 ===== -->
+  <rect x="80" y="478" width="740" height="92" rx="14" fill="#ffffff" stroke="#e7e3da" stroke-width="1.5"/>
+  <text x="235" y="518" font-size="17" font-weight="700" fill="#1f2937">Suggest a trade</text>
+  <text x="235" y="542" font-size="12.5" fill="#6b7280">It turns that view into a concrete idea: which way to trade, and at what confidence.</text>
+  <text x="183" y="535" font-size="30">💡</text>
+
+  <!-- ===== Card 5 ===== -->
+  <rect x="80" y="594" width="740" height="92" rx="14" fill="#ffffff" stroke="#e7e3da" stroke-width="1.5"/>
+  <text x="235" y="634" font-size="17" font-weight="700" fill="#1f2937">Safety check</text>
+  <text x="235" y="658" font-size="12.5" fill="#6b7280">Rule-based guardrails set the size and can veto. You can require your sign-off first.</text>
+  <text x="183" y="651" font-size="30">🛡️</text>
+
+  <!-- ===== Card 6 ===== -->
+  <rect x="80" y="710" width="740" height="92" rx="14" fill="#ffffff" stroke="#e7e3da" stroke-width="1.5"/>
+  <text x="235" y="750" font-size="17" font-weight="700" fill="#1f2937">Place the trade</text>
+  <text x="235" y="774" font-size="12.5" fill="#6b7280">For now these are practice trades only — no real money is at stake yet.</text>
+  <text x="183" y="767" font-size="30">🧾</text>
+
+  <!-- ===== Card 7 ===== -->
+  <rect x="80" y="826" width="740" height="92" rx="14" fill="#ffffff" stroke="#e7e3da" stroke-width="1.5"/>
+  <text x="235" y="866" font-size="17" font-weight="700" fill="#1f2937">Keep score</text>
+  <text x="235" y="890" font-size="12.5" fill="#6b7280">It checks whether each call was right, and earns more independence only as it proves itself.</text>
+  <text x="183" y="883" font-size="30">📊</text>
+
+  <!-- number badges (on top of spine + cards) -->
+  <g font-size="20" font-weight="800" fill="#ffffff" text-anchor="middle">
+    <circle cx="130" cy="176" r="22" fill="#38bdf8"/><text x="130" y="183">1</text>
+    <circle cx="130" cy="292" r="22" fill="#2dd4bf"/><text x="130" y="299">2</text>
+    <circle cx="130" cy="408" r="22" fill="#a78bfa"/><text x="130" y="415">3</text>
+    <circle cx="130" cy="524" r="22" fill="#818cf8"/><text x="130" y="531">4</text>
+    <circle cx="130" cy="640" r="22" fill="#f87171"/><text x="130" y="647">5</text>
+    <circle cx="130" cy="756" r="22" fill="#34d399"/><text x="130" y="763">6</text>
+    <circle cx="130" cy="872" r="22" fill="#f472b6"/><text x="130" y="879">7</text>
+  </g>
+
+  <!-- footer -->
+  <text x="450" y="962" text-anchor="middle" font-size="13" fill="#9a8f78" font-style="italic">You're always in control — a single kill switch stops everything instantly.</text>
+</svg>

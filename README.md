@@ -150,6 +150,10 @@ pytest --cov=core --cov=gateway --cov=ingestion   # with coverage
 
 All inter-subsystem communication flows through the event bus as `EventEnvelope` objects. Consumers subscribe by topic prefix (`"market.*"`, `"decision.*"`, `"*"`). The bus persists every event to SQLite before fan-out — the event store is the audit log.
 
+**Diagrams:**
+- 📊 [Full event-pipeline diagram](docs/pipeline.svg) — ingestion → thesis → decision → risk → execution, with the event topic on every handoff.
+- 🗺️ [Plain-language overview](docs/pipeline-simple.svg) — the same flow, no jargon.
+
 See [`docs/architecture.md`](docs/architecture.md) for the full breakdown and [`docs/adr/`](docs/adr/) for key design decisions.
 
 ---

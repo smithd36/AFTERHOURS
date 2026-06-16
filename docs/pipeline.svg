@@ -1,0 +1,145 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1140 1380" width="1140" height="1380" font-family="Segoe UI, system-ui, -apple-system, sans-serif">
+  <defs>
+    <marker id="ah" markerWidth="12" markerHeight="12" refX="8" refY="3" orient="auto" markerUnits="userSpaceOnUse">
+      <path d="M0,0 L8,3 L0,6 Z" fill="#64748b"/>
+    </marker>
+  </defs>
+
+  <!-- canvas -->
+  <rect x="0" y="0" width="1140" height="1380" fill="#0b1220"/>
+
+  <!-- title -->
+  <text x="570" y="38" text-anchor="middle" font-size="23" font-weight="700" fill="#e2e8f0">AFTERHOURS — Event Pipeline</text>
+  <text x="570" y="62" text-anchor="middle" font-size="13" fill="#94a3b8">ingestion → thesis → decision → risk → execution · every arrow is an EventEnvelope, persisted to SQLite before fan-out</text>
+
+  <!-- ============ DATA SOURCES ============ -->
+  <g>
+    <rect x="40"  y="100" width="250" height="58" rx="10" fill="#16203a" stroke="#38bdf8" stroke-width="2"/>
+    <text x="165" y="124" text-anchor="middle" font-size="13" font-weight="700" fill="#e2e8f0">Kraken WebSocket v2</text>
+    <text x="165" y="142" text-anchor="middle" font-size="10.5" fill="#94a3b8">crypto ticks (no auth)</text>
+
+    <rect x="310" y="100" width="250" height="58" rx="10" fill="#16203a" stroke="#38bdf8" stroke-width="2"/>
+    <text x="435" y="124" text-anchor="middle" font-size="13" font-weight="700" fill="#e2e8f0">EquityFeed</text>
+    <text x="435" y="142" text-anchor="middle" font-size="10.5" fill="#94a3b8">REST polling (Alpaca / Polygon)</text>
+
+    <rect x="580" y="100" width="250" height="58" rx="10" fill="#16203a" stroke="#38bdf8" stroke-width="2"/>
+    <text x="705" y="124" text-anchor="middle" font-size="13" font-weight="700" fill="#e2e8f0">RSS News</text>
+    <text x="705" y="142" text-anchor="middle" font-size="10.5" fill="#94a3b8">CoinDesk · CoinTelegraph</text>
+
+    <rect x="850" y="100" width="250" height="58" rx="10" fill="#16203a" stroke="#38bdf8" stroke-width="2"/>
+    <text x="975" y="124" text-anchor="middle" font-size="13" font-weight="700" fill="#e2e8f0">Alt-data feeds</text>
+    <text x="975" y="142" text-anchor="middle" font-size="10.5" fill="#94a3b8">insider · gov-exposure · supply-chain</text>
+  </g>
+
+  <!-- sources -> FeedRouter -->
+  <line x1="165" y1="158" x2="495" y2="199" stroke="#64748b" stroke-width="1.5" marker-end="url(#ah)"/>
+  <line x1="435" y1="158" x2="545" y2="199" stroke="#64748b" stroke-width="1.5" marker-end="url(#ah)"/>
+  <line x1="705" y1="158" x2="600" y2="199" stroke="#64748b" stroke-width="1.5" marker-end="url(#ah)"/>
+  <line x1="975" y1="158" x2="650" y2="199" stroke="#64748b" stroke-width="1.5" marker-end="url(#ah)"/>
+
+  <!-- WatchlistManager -->
+  <rect x="40" y="200" width="250" height="56" rx="10" fill="#16203a" stroke="#7dd3fc" stroke-width="2"/>
+  <text x="165" y="223" text-anchor="middle" font-size="13" font-weight="700" fill="#e2e8f0">WatchlistManager</text>
+  <text x="165" y="241" text-anchor="middle" font-size="10.5" fill="#94a3b8">persist + seed defaults</text>
+  <line x1="290" y1="228" x2="438" y2="228" stroke="#64748b" stroke-width="1.5" marker-end="url(#ah)"/>
+  <text x="300" y="221" font-size="11" fill="#7dd3fc" font-family="ui-monospace, SFMono-Regular, Menlo, Consolas, monospace">watchlist.*</text>
+
+  <!-- FeedRouter -->
+  <rect x="440" y="200" width="260" height="56" rx="10" fill="#16203a" stroke="#38bdf8" stroke-width="2"/>
+  <text x="570" y="223" text-anchor="middle" font-size="14" font-weight="700" fill="#e2e8f0">FeedRouter</text>
+  <text x="570" y="241" text-anchor="middle" font-size="10.5" fill="#94a3b8">maps watchlist ⇄ feed subscriptions</text>
+
+  <!-- FeedRouter -> bus -->
+  <line x1="570" y1="256" x2="570" y2="288" stroke="#64748b" stroke-width="1.5" marker-end="url(#ah)"/>
+
+  <!-- ============ EVENT BUS ============ -->
+  <rect x="40" y="290" width="1060" height="58" rx="10" fill="#2a2113" stroke="#fbbf24" stroke-width="2"/>
+  <text x="570" y="315" text-anchor="middle" font-size="15" font-weight="700" fill="#fbbf24">EVENT BUS  ·  InProcessBus → SqliteEventStore  (persist-first, then fan-out)</text>
+  <text x="570" y="334" text-anchor="middle" font-size="10.5" fill="#cbb58a">all subsystems below subscribe by topic prefix and publish their results back to the bus</text>
+
+  <!-- bus -> signal generators -->
+  <line x1="570" y1="348" x2="570" y2="398" stroke="#64748b" stroke-width="1.5" marker-end="url(#ah)"/>
+  <text x="585" y="378" font-size="12" fill="#94a3b8" font-family="ui-monospace, SFMono-Regular, Menlo, Consolas, monospace">market.* · news</text>
+
+  <!-- ============ PIPELINE STAGES ============ -->
+  <!-- A: Signal Generators -->
+  <rect x="310" y="400" width="520" height="62" rx="11" fill="#16203a" stroke="#2dd4bf" stroke-width="2"/>
+  <text x="570" y="427" text-anchor="middle" font-size="15" font-weight="700" fill="#e2e8f0">Signal Generators</text>
+  <text x="570" y="447" text-anchor="middle" font-size="11.5" fill="#94a3b8">PriceAlertGenerator · NewsFeed · alt-data pollers</text>
+  <line x1="570" y1="462" x2="570" y2="510" stroke="#64748b" stroke-width="1.5" marker-end="url(#ah)"/>
+  <text x="585" y="491" font-size="12" fill="#2dd4bf" font-family="ui-monospace, SFMono-Regular, Menlo, Consolas, monospace">signal.created</text>
+
+  <!-- B: ThesisGenerator -->
+  <rect x="310" y="512" width="520" height="62" rx="11" fill="#16203a" stroke="#a78bfa" stroke-width="2"/>
+  <text x="570" y="539" text-anchor="middle" font-size="15" font-weight="700" fill="#e2e8f0">ThesisGenerator</text>
+  <text x="570" y="559" text-anchor="middle" font-size="11.5" fill="#94a3b8">LLM → direction + calibrated confidence</text>
+  <line x1="570" y1="574" x2="570" y2="622" stroke="#64748b" stroke-width="1.5" marker-end="url(#ah)"/>
+  <text x="585" y="603" font-size="12" fill="#a78bfa" font-family="ui-monospace, SFMono-Regular, Menlo, Consolas, monospace">thesis.created</text>
+
+  <!-- ThesisInvalidator (side) -->
+  <rect x="865" y="512" width="235" height="62" rx="10" fill="#16203a" stroke="#a78bfa" stroke-width="1.5" stroke-dasharray="5,4"/>
+  <text x="982" y="539" text-anchor="middle" font-size="13" font-weight="700" fill="#e2e8f0">ThesisInvalidator</text>
+  <text x="982" y="558" text-anchor="middle" font-size="10.5" fill="#94a3b8">time horizon → thesis.invalidated</text>
+  <line x1="865" y1="543" x2="832" y2="543" stroke="#64748b" stroke-width="1.5" stroke-dasharray="5,4" marker-end="url(#ah)"/>
+
+  <!-- C: DecisionGenerator -->
+  <rect x="310" y="624" width="520" height="62" rx="11" fill="#16203a" stroke="#a78bfa" stroke-width="2"/>
+  <text x="570" y="651" text-anchor="middle" font-size="15" font-weight="700" fill="#e2e8f0">DecisionGenerator</text>
+  <text x="570" y="671" text-anchor="middle" font-size="11.5" fill="#94a3b8">LLM proposes direction · evidence · confidence (size is NOT set here)</text>
+  <line x1="570" y1="686" x2="570" y2="734" stroke="#64748b" stroke-width="1.5" marker-end="url(#ah)"/>
+  <text x="585" y="715" font-size="12" fill="#a78bfa" font-family="ui-monospace, SFMono-Regular, Menlo, Consolas, monospace">decision.proposed</text>
+
+  <!-- D: RiskEngine (final gate) -->
+  <rect x="310" y="736" width="520" height="62" rx="11" fill="#2a1518" stroke="#f87171" stroke-width="3"/>
+  <text x="570" y="763" text-anchor="middle" font-size="15" font-weight="700" fill="#fecaca">RiskEngine — FINAL GATE</text>
+  <text x="570" y="783" text-anchor="middle" font-size="11.5" fill="#fca5a5">deterministic sizing + limits + stop-loss</text>
+  <line x1="570" y1="798" x2="570" y2="846" stroke="#64748b" stroke-width="1.5" marker-end="url(#ah)"/>
+  <text x="585" y="819" font-size="12" fill="#34d399" font-family="ui-monospace, SFMono-Regular, Menlo, Consolas, monospace">decision.approved ✓</text>
+  <text x="585" y="836" font-size="11" fill="#94a3b8" font-family="ui-monospace, SFMono-Regular, Menlo, Consolas, monospace">(decision.rejected ✗ → expired)</text>
+
+  <!-- ModeController / HALT (side) -->
+  <rect x="865" y="736" width="235" height="62" rx="10" fill="#2a1518" stroke="#f87171" stroke-width="1.5" stroke-dasharray="5,4"/>
+  <text x="982" y="759" text-anchor="middle" font-size="13" font-weight="700" fill="#fecaca">ModeController · HALT</text>
+  <text x="982" y="776" text-anchor="middle" font-size="10" fill="#fca5a5">kill switch → OBSERVE</text>
+  <text x="982" y="790" text-anchor="middle" font-size="10" fill="#fca5a5">Assisted: operator approve / reject</text>
+  <line x1="865" y1="767" x2="832" y2="767" stroke="#64748b" stroke-width="1.5" stroke-dasharray="5,4" marker-end="url(#ah)"/>
+
+  <!-- E: PaperExecutor -->
+  <rect x="310" y="848" width="520" height="62" rx="11" fill="#16203a" stroke="#34d399" stroke-width="2"/>
+  <text x="570" y="875" text-anchor="middle" font-size="15" font-weight="700" fill="#e2e8f0">PaperExecutor</text>
+  <text x="570" y="895" text-anchor="middle" font-size="11.5" fill="#94a3b8">simulated fills (re-validates risk at execute time)</text>
+  <line x1="570" y1="910" x2="570" y2="958" stroke="#64748b" stroke-width="1.5" marker-end="url(#ah)"/>
+  <text x="585" y="939" font-size="12" fill="#34d399" font-family="ui-monospace, SFMono-Regular, Menlo, Consolas, monospace">order.submitted · order.filled</text>
+
+  <!-- F: Portfolio -->
+  <rect x="310" y="960" width="520" height="62" rx="11" fill="#16203a" stroke="#34d399" stroke-width="2"/>
+  <text x="570" y="987" text-anchor="middle" font-size="15" font-weight="700" fill="#e2e8f0">Portfolio · Ledger</text>
+  <text x="570" y="1007" text-anchor="middle" font-size="11.5" fill="#94a3b8">positions · cash · P&amp;L</text>
+  <line x1="570" y1="1022" x2="570" y2="1070" stroke="#64748b" stroke-width="1.5" marker-end="url(#ah)"/>
+  <text x="585" y="1051" font-size="12" fill="#34d399" font-family="ui-monospace, SFMono-Regular, Menlo, Consolas, monospace">portfolio.position_updated · decision.executed</text>
+
+  <!-- G: OutcomeResolver -->
+  <rect x="310" y="1072" width="520" height="62" rx="11" fill="#16203a" stroke="#f472b6" stroke-width="2"/>
+  <text x="570" y="1099" text-anchor="middle" font-size="15" font-weight="700" fill="#e2e8f0">OutcomeResolver</text>
+  <text x="570" y="1119" text-anchor="middle" font-size="11.5" fill="#94a3b8">prediction vs price at horizon</text>
+  <line x1="570" y1="1134" x2="570" y2="1182" stroke="#64748b" stroke-width="1.5" marker-end="url(#ah)"/>
+  <text x="585" y="1163" font-size="12" fill="#f472b6" font-family="ui-monospace, SFMono-Regular, Menlo, Consolas, monospace">decision.resolved</text>
+
+  <!-- H: CalibrationEngine -->
+  <rect x="310" y="1184" width="520" height="62" rx="11" fill="#16203a" stroke="#f472b6" stroke-width="2"/>
+  <text x="570" y="1211" text-anchor="middle" font-size="15" font-weight="700" fill="#e2e8f0">CalibrationEngine</text>
+  <text x="570" y="1231" text-anchor="middle" font-size="11.5" fill="#94a3b8">ECE + Appendix B gate tracking (promotion metric)</text>
+
+  <!-- ============ UI tap ============ -->
+  <line x1="170" y1="348" x2="170" y2="1314" stroke="#64748b" stroke-width="1.5" stroke-dasharray="5,4"/>
+  <line x1="170" y1="1314" x2="308" y2="1314" stroke="#64748b" stroke-width="1.5" stroke-dasharray="5,4" marker-end="url(#ah)"/>
+  <text x="180" y="1306" font-size="11" fill="#94a3b8" font-family="ui-monospace, SFMono-Regular, Menlo, Consolas, monospace">bus '*' → UI</text>
+
+  <rect x="310" y="1290" width="520" height="50" rx="10" fill="#16203a" stroke="#94a3b8" stroke-width="2"/>
+  <text x="570" y="1312" text-anchor="middle" font-size="13" font-weight="700" fill="#e2e8f0">Gateway · Broadcaster → WebSocket / REST → React Terminal</text>
+  <text x="570" y="1329" text-anchor="middle" font-size="10.5" fill="#94a3b8">subscribes to bus '*' — forwards every envelope to the browser</text>
+
+  <!-- footnote -->
+  <text x="570" y="1366" text-anchor="middle" font-size="11" fill="#64748b" font-style="italic">Decision.id is the correlation_id threading proposed → approved → submitted → filled → executed → resolved.  Immutable artifact — status changes are new events, never mutations.</text>
+</svg>
