@@ -53,6 +53,7 @@ dev = [
 # Subsystem packages that will grow under the repo root
 packages = [
     "core",
+    "analytics",
     "ingestion",
     "reasoning",
     "signals",

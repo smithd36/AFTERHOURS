@@ -16,6 +16,7 @@ from typing import Any, Protocol
 
 import structlog
 
+from analytics import economic_metrics
 from core.bus.base import Bus, Subscription
 from core.schemas.events import EventEnvelope, EventType
 
@@ -68,45 +69,6 @@ class TradeBook(Protocol):
     def realized_trades(self) -> Sequence[Decimal]: ...
     @property
     def initial_cash(self) -> Decimal: ...
-
-
-def economic_metrics(realized: Sequence[Decimal]) -> dict[str, Any]:
-    """Round-trip economics from net-of-fee realized P&L per closed trade.
-
-    `realized` is the Portfolio's per-close P&L (entry + exit fees already
-    deducted — see ``Portfolio.close_position``), so every figure here is
-    cost-adjusted. ``profit_factor`` is ``None`` when there are no losing trades
-    (undefined / effectively infinite); the gate treats that as passing when the
-    book is net-positive.
-    """
-    n = len(realized)
-    if n == 0:
-        return {
-            "trades": 0,
-            "net_pnl": Decimal("0"),
-            "expectancy": None,
-            "win_rate": None,
-            "profit_factor": None,
-            "max_drawdown": Decimal("0"),
-        }
-    wins = [r for r in realized if r > 0]
-    gross_win = sum(wins, Decimal("0"))
-    gross_loss = -sum((r for r in realized if r < 0), Decimal("0"))  # positive magnitude
-    net = sum(realized, Decimal("0"))
-    # Max peak-to-trough on the cumulative realized-P&L curve.
-    peak = cum = max_dd = Decimal("0")
-    for r in realized:
-        cum += r
-        peak = max(peak, cum)
-        max_dd = max(max_dd, peak - cum)
-    return {
-        "trades": n,
-        "net_pnl": net,
-        "expectancy": net / n,
-        "win_rate": len(wins) / n,
-        "profit_factor": (gross_win / gross_loss) if gross_loss > 0 else None,
-        "max_drawdown": max_dd,
-    }
 
 
 class GateTracker:

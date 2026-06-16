@@ -55,6 +55,7 @@ from watchlist import SqliteWatchlistStore, WatchlistManager
 
 from .broadcaster import Broadcaster
 from .routes import (
+    analytics_router,
     calibration_router,
     decisions_router,
     events_router,
@@ -373,6 +374,7 @@ def create_app(lifespan: Any = default_lifespan) -> FastAPI:
     app.include_router(events_router)
     app.include_router(calibration_router)
     app.include_router(watchlist_router)
+    app.include_router(analytics_router)
     return app
 
 

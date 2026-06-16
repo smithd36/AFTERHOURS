@@ -20,6 +20,7 @@ from core.bus import InMemoryEventStore, InProcessBus
 from core.mode import ModeController
 from gateway.app import create_app
 from gateway.broadcaster import Broadcaster
+from portfolio import Portfolio
 
 
 # ---------------------------------------------------------------------------
@@ -41,15 +42,20 @@ async def _lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
 
     mode_controller = ModeController(bus)
 
+    portfolio = Portfolio(bus)
+    await portfolio.start()
+
     app.state.bus = bus
     app.state.broadcaster = broadcaster
     app.state.event_store = store
     app.state.calibration_engine = calibration_engine
     app.state.gate_tracker = gate_tracker
     app.state.mode_controller = mode_controller
+    app.state.portfolio = portfolio
 
     yield
 
+    await portfolio.stop()
     await gate_tracker.stop()
     await calibration_engine.stop()
     await broadcaster.stop()
@@ -283,3 +289,52 @@ class TestCalibrationEndpoints:
             assert data[gate]["ready"] is False  # empty sample
             assert data[gate]["criteria"]
             assert data[gate]["deferred"]
+
+
+class TestAnalyticsEndpoint:
+    @staticmethod
+    def _publish_fill(
+        client: TestClient, action: str, price: str, side: str = "long"
+    ) -> None:
+        from datetime import UTC, datetime
+        from typing import cast
+
+        from core.schemas import EventEnvelope, EventType
+
+        env = EventEnvelope(
+            event_type=EventType.ORDER_FILLED,
+            source="test",
+            event_time=datetime.now(UTC),
+            ingest_time=datetime.now(UTC),
+            payload={
+                "instrument": "BTC-USD",
+                "action": action,
+                "side": side,
+                "fill_price": price,
+                "quantity": "1",
+                "cost_usd": price,
+                "fee": "0",
+                "decision_id": "d1",
+            },
+        )
+        client.portal.call(cast(FastAPI, client.app).state.bus.publish, env)
+
+    def test_empty_history(self, client: TestClient) -> None:
+        data = client.get("/api/analytics").json()
+        assert data["n_days"] == 0
+        assert data["equity_curve"] == []
+        assert data["metrics"]["sharpe"] is None
+
+    def test_reflects_closed_round_trip(self, client: TestClient) -> None:
+        # open long @100, close @120 (fee 0) → realized +20
+        self._publish_fill(client, "open", "100")
+        self._publish_fill(client, "close", "120")
+
+        data = client.get("/api/analytics").json()
+        assert data["n_days"] >= 1
+        assert data["metrics"]["net_pnl"] == "20"
+        assert data["metrics"]["trades"] == 1
+        # equity-curve metrics are present (Sharpe needs >1 day, may be null)
+        for key in ("sharpe", "sortino", "volatility", "var_95",
+                    "max_drawdown_value", "max_drawdown_pct"):
+            assert key in data["metrics"]

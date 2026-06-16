@@ -11,12 +11,14 @@ import {
   CandlestickChart,
   Gauge,
   Gavel,
+  LineChart,
   ListChecks,
   Radio,
   Wallet,
   type LucideIcon,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
+import { AnalyticsPanel } from "@/components/panels/AnalyticsPanel";
 import { CalibrationPanel } from "@/components/panels/CalibrationPanel";
 import { DecisionQueue } from "@/components/panels/DecisionQueue";
 import { FeedHealthBar } from "@/components/panels/FeedHealthBar";
@@ -25,6 +27,7 @@ import { PortfolioPanel } from "@/components/panels/PortfolioPanel";
 import { SignalFeed } from "@/components/panels/SignalFeed";
 import { ThesisFeed } from "@/components/panels/ThesisFeed";
 import { WatchlistDrawer } from "@/components/layout/WatchlistDrawer";
+import { useAnalytics } from "@/hooks/useAnalytics";
 import { useBackfill } from "@/hooks/useBackfill";
 import { useCalibration } from "@/hooks/useCalibration";
 import { useDecisions } from "@/hooks/useDecisions";
@@ -63,7 +66,7 @@ function useMediaQuery(query: string): boolean {
   return matches;
 }
 
-type TabId = "markets" | "signals" | "theses" | "decisions" | "book" | "calib";
+type TabId = "markets" | "signals" | "theses" | "decisions" | "book" | "calib" | "perf";
 
 interface TabDef {
   id: TabId;
@@ -271,7 +274,7 @@ function MobileTabBar({
   return (
     <nav
       aria-label="Panels"
-      className="grid shrink-0 grid-cols-6 border-t border-border bg-card pb-[env(safe-area-inset-bottom)]"
+      className="grid shrink-0 grid-cols-7 border-t border-border bg-card pb-[env(safe-area-inset-bottom)]"
     >
       {tabs.map((tab) => {
         const Icon = tab.icon;
@@ -401,6 +404,7 @@ export default function App() {
   const { ticks, handleEnvelope: handleTick } = useMarketTicks();
   const { snapshot } = usePortfolio();
   const { report, gates, handleEnvelope: handleCalibration } = useCalibration();
+  const { report: analytics, handleEnvelope: handleAnalytics } = useAnalytics();
   const {
     entries: watchlistEntries,
     loading: watchlistLoading,
@@ -429,6 +433,7 @@ export default function App() {
       handleThesis(envelope);
       handleDecision(envelope);
       handleCalibration(envelope);
+      handleAnalytics(envelope);
       handleWatchlist(envelope);
       handleFeedHealth(envelope);
     },
@@ -438,6 +443,7 @@ export default function App() {
       handleThesis,
       handleDecision,
       handleCalibration,
+      handleAnalytics,
       handleWatchlist,
       handleFeedHealth,
     ],
@@ -477,6 +483,7 @@ export default function App() {
   );
   const portfolio = <PortfolioPanel snapshot={snapshot} decisions={decisions} />;
   const calibration = <CalibrationPanel report={report} gates={gates} />;
+  const analyticsPanel = <AnalyticsPanel report={analytics} />;
 
   const tabs: TabDef[] = [
     { id: "markets", label: "Markets", icon: CandlestickChart },
@@ -485,6 +492,7 @@ export default function App() {
     { id: "decisions", label: "Decisions", icon: Gavel, badge: pendingCount },
     { id: "book", label: "Book", icon: Wallet },
     { id: "calib", label: "Calib", icon: Gauge },
+    { id: "perf", label: "Perf", icon: LineChart },
   ];
 
   const mobilePanel: Record<TabId, ReactNode> = {
@@ -494,6 +502,7 @@ export default function App() {
     decisions: decisionQueue,
     book: portfolio,
     calib: calibration,
+    perf: analyticsPanel,
   };
 
   return (
@@ -557,6 +566,7 @@ export default function App() {
             <div className="mx-auto grid max-w-5xl grid-cols-1 gap-2 xl:grid-cols-2">
               {portfolio}
               {calibration}
+              <div className="xl:col-span-2">{analyticsPanel}</div>
             </div>
           </main>
         )

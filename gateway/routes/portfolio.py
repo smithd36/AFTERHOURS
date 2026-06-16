@@ -7,6 +7,8 @@ from decimal import Decimal
 
 from fastapi import APIRouter, HTTPException, Query, Request
 
+from analytics import realized_pnl
+from core.schemas.decision import Side
 from portfolio.ledger import TRADING_TZ, trading_day
 
 router = APIRouter(prefix="/api/portfolio", tags=["portfolio"])
@@ -87,20 +89,19 @@ async def get_trades(
     trades = []
     for fill in day_fills:
         p = fill.payload
-        realized_pnl: str | None = None
+        realized_str: str | None = None
         if p.get("action") == "close":
             open_p = open_fills.get(p.get("decision_id", ""))
             if open_p:
-                entry = Decimal(str(open_p.get("fill_price", "0")))
-                open_fee = Decimal(str(open_p.get("fee", "0")))
-                close_price = Decimal(str(p.get("fill_price", "0")))
-                qty = Decimal(str(p.get("quantity", "0")))
-                close_fee = Decimal(str(p.get("fee", "0")))
-                if p.get("side") == "long":
-                    realized = (close_price - entry) * qty - open_fee - close_fee
-                else:
-                    realized = (entry - close_price) * qty - open_fee - close_fee
-                realized_pnl = str(realized)
+                realized = realized_pnl(
+                    side=Side(p.get("side", "long")),
+                    entry_price=Decimal(str(open_p.get("fill_price", "0"))),
+                    exit_price=Decimal(str(p.get("fill_price", "0"))),
+                    quantity=Decimal(str(p.get("quantity", "0"))),
+                    entry_fee=Decimal(str(open_p.get("fee", "0"))),
+                    exit_fee=Decimal(str(p.get("fee", "0"))),
+                )
+                realized_str = str(realized)
 
         trades.append({
             "instrument": p.get("instrument", ""),
@@ -112,7 +113,7 @@ async def get_trades(
             "cost_usd": p.get("cost_usd", "0"),
             "decision_id": p.get("decision_id", ""),
             "ts": fill.event_time,
-            "realized_pnl": realized_pnl,
+            "realized_pnl": realized_str,
         })
 
     return {"date": str(target), "trades": trades}
