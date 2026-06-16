@@ -171,26 +171,23 @@ function PositionCard({
   );
 }
 
-function TodaysTrades({ trades }: { trades: TradeRecord[] }) {
-  const [open, setOpen] = useState(false);
-  if (trades.length === 0) return null;
+function ClosedTrades({ trades }: { trades: TradeRecord[] }) {
+  const closed = useMemo(() => trades.filter((t) => t.action === "close"), [trades]);
+  if (closed.length === 0) {
+    return (
+      <p className="py-2 text-center text-[11px] text-muted-foreground">no closed trades today</p>
+    );
+  }
   return (
-    <div className="rounded-sm bg-muted/60 p-2">
-      <button
-        type="button"
-        onClick={() => setOpen((v) => !v)}
-        className="flex w-full items-center gap-1.5 text-left text-[11px] font-semibold uppercase tracking-wider text-muted-foreground focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring rounded-sm"
-      >
-        <span>{open ? "▾" : "▸"}</span>
-        <span>Today's trades ({trades.length})</span>
-      </button>
-      {open && (
-        <div className="mt-1.5 space-y-0.5 border-t border-border/60 pt-1.5">
-          {trades.map((t, i) => (
-            <TradeRow key={`${t.decision_id}-${t.action}-${i}`} trade={t} />
-          ))}
-        </div>
-      )}
+    <div className="space-y-2">
+      <p className="text-[11px] font-semibold uppercase tracking-wider text-muted-foreground">
+        Closed trades ({closed.length})
+      </p>
+      <div className="rounded-sm bg-muted/60 p-2 space-y-0.5">
+        {closed.map((t, i) => (
+          <TradeRow key={`${t.decision_id}-${t.action}-${i}`} trade={t} />
+        ))}
+      </div>
     </div>
   );
 }
@@ -266,10 +263,11 @@ export function PortfolioPanel({ snapshot, decisions }: Props) {
   }
 
   return (
-    <PanelShell title="PORTFOLIO">
-      {/* Cap height only on the desktop grid; on mobile the panel grows and the
-          page owns the single scroll (no nested scroll-capture). */}
-      <div className="max-h-80 overflow-y-auto space-y-3 p-3 max-lg:max-h-none max-lg:overflow-visible">
+    <PanelShell title="PORTFOLIO" className="flex flex-col">
+      {/* flex-1 fills the grid cell (which stretches to the taller sibling) so the
+          panel extends full-length instead of cutting off at a fixed cap. The
+          page (main) owns the scroll, so this only scrolls if content overflows. */}
+      <div className="flex-1 min-h-0 space-y-3 overflow-y-auto p-3">
         {/* Summary row */}
         <div className="grid grid-cols-2 gap-x-4 gap-y-1 rounded-sm bg-muted/60 p-2 text-xs">
           <div className="flex justify-between">
@@ -309,8 +307,8 @@ export function PortfolioPanel({ snapshot, decisions }: Props) {
           </div>
         )}
 
-        {/* Today's trades */}
-        <TodaysTrades trades={snapshot.trades} />
+        {/* Closed trades */}
+        <ClosedTrades trades={snapshot.trades} />
       </div>
     </PanelShell>
   );

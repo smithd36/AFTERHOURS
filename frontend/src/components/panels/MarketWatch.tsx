@@ -69,9 +69,10 @@ function TickItem({ tick }: { tick: TickRow }) {
 
 interface MarketWatchProps {
   ticks: Record<string, TickRow>;
+  collapsible?: boolean;
 }
 
-export function MarketWatch({ ticks }: MarketWatchProps) {
+export function MarketWatch({ ticks, collapsible }: MarketWatchProps) {
   const rows = useMemo(
     () =>
       Object.values(ticks).sort((a, b) =>
@@ -86,7 +87,7 @@ export function MarketWatch({ ticks }: MarketWatchProps) {
       : undefined;
 
   return (
-    <PanelShell title="MARKET WATCH" rightSlot={countLabel}>
+    <PanelShell title="MARKET WATCH" rightSlot={countLabel} collapsible={collapsible}>
       {rows.length === 0 ? (
         <p className="px-3 py-6 text-center text-[11px] text-muted-foreground">
           awaiting data…

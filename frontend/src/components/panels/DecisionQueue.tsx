@@ -200,7 +200,7 @@ export function DecisionQueue({ decisions, mode, onExecute, onReject }: Props) {
           no decisions yet
         </p>
       ) : (
-        <div className="max-h-[32rem] overflow-y-auto space-y-2 p-3 max-lg:max-h-none max-lg:overflow-visible">
+        <div className="space-y-2 p-3">
           {pending.length > 0 && (
             <>
               <p className="text-[11px] font-semibold uppercase tracking-wider text-muted-foreground">

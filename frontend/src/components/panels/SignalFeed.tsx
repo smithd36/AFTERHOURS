@@ -119,9 +119,10 @@ function SignalItem({ row }: { row: SignalRow }) {
 
 interface SignalFeedProps {
   signals: SignalRow[];
+  collapsible?: boolean;
 }
 
-export function SignalFeed({ signals }: SignalFeedProps) {
+export function SignalFeed({ signals, collapsible }: SignalFeedProps) {
   const [active, setActive] = useState<string>("all");
 
   // Tab list + per-type counts, derived from the signals present. The active
@@ -145,6 +146,7 @@ export function SignalFeed({ signals }: SignalFeedProps) {
     <PanelShell
       title="SIGNAL FEED"
       rightSlot={signals.length > 0 ? `${signals.length} SIGNAL${signals.length !== 1 ? "S" : ""}` : undefined}
+      collapsible={collapsible}
     >
       {/* Family tabs */}
       <div

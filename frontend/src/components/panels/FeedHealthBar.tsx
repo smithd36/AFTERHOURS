@@ -21,32 +21,60 @@ export function FeedHealthBar({ feeds }: { feeds: FeedHealthRow[] }) {
   if (feeds.length === 0) return null;
   const degraded = feeds.filter((f) => f.status === "degraded").length;
 
+  const pills = feeds.map((f) => (
+    <span
+      key={f.feedId}
+      title={f.status === "degraded" ? f.detail || "degraded" : "healthy"}
+      className={cn(
+        "flex items-center gap-1.5",
+        f.status === "degraded" ? "text-warning" : "text-muted-foreground/80",
+      )}
+    >
+      <span
+        className={cn(
+          "inline-block h-1.5 w-1.5 rounded-full",
+          f.status === "degraded" ? "bg-warning" : "bg-bullish",
+        )}
+      />
+      {LABEL[f.feedId] ?? f.feedId}
+    </span>
+  ));
+
   return (
-    <div className="flex flex-wrap items-center gap-x-3 gap-y-1 border-b border-border/60 bg-card/40 px-3 py-1 text-[11px] sm:px-4">
-      <span className="font-semibold uppercase tracking-widest text-muted-foreground/60">
-        Feeds
-      </span>
-      {feeds.map((f) => (
-        <span
-          key={f.feedId}
-          title={f.status === "degraded" ? f.detail || "degraded" : "healthy"}
-          className={cn(
-            "flex items-center gap-1.5",
-            f.status === "degraded" ? "text-warning" : "text-muted-foreground/80",
-          )}
-        >
+    <>
+      {/* Phones: a single summary pill that expands on tap (native <details>,
+          no JS) — keeps the chrome to one line until the operator wants detail. */}
+      <details className="group border-b border-border/60 bg-card/40 text-[11px] sm:hidden">
+        <summary className="flex cursor-pointer list-none items-center gap-1.5 px-3 py-1 marker:hidden">
           <span
             className={cn(
               "inline-block h-1.5 w-1.5 rounded-full",
-              f.status === "degraded" ? "bg-warning" : "bg-bullish",
+              degraded > 0 ? "bg-warning" : "bg-bullish",
             )}
           />
-          {LABEL[f.feedId] ?? f.feedId}
+          <span className="font-semibold uppercase tracking-widest text-muted-foreground/60">
+            Feeds
+          </span>
+          <span className={cn("font-medium", degraded > 0 ? "text-warning" : "text-muted-foreground/70")}>
+            {degraded > 0 ? `${degraded} degraded` : "all healthy"}
+          </span>
+          <span className="ml-auto text-muted-foreground/40 transition-transform group-open:rotate-180">
+            ⌄
+          </span>
+        </summary>
+        <div className="flex flex-wrap items-center gap-x-3 gap-y-1 px-3 pb-1.5">{pills}</div>
+      </details>
+
+      {/* sm+: the full always-visible strip. */}
+      <div className="hidden flex-wrap items-center gap-x-3 gap-y-1 border-b border-border/60 bg-card/40 px-3 py-1 text-[11px] sm:flex sm:px-4">
+        <span className="font-semibold uppercase tracking-widest text-muted-foreground/60">
+          Feeds
         </span>
-      ))}
-      {degraded > 0 && (
-        <span className="ml-auto font-medium text-warning">{degraded} degraded</span>
-      )}
-    </div>
+        {pills}
+        {degraded > 0 && (
+          <span className="ml-auto font-medium text-warning">{degraded} degraded</span>
+        )}
+      </div>
+    </>
   );
 }

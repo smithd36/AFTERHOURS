@@ -10,6 +10,7 @@ from __future__ import annotations
 from collections.abc import Iterable
 from datetime import UTC, date, datetime
 from decimal import Decimal
+from zoneinfo import ZoneInfo
 
 import structlog
 
@@ -21,6 +22,19 @@ from .models import Position
 from .settings import PortfolioSettings
 
 logger = structlog.get_logger(__name__)
+
+# The trading day for daily-P&L rollover is the New York calendar day, not UTC.
+# An equity operator thinks in NYSE sessions: the day's realized P&L should keep
+# accumulating through the after-hours evening and only reset at ET midnight, not
+# at 20:00 ET when UTC ticks over. Still event-time keyed (two-clock rule) — just
+# projected into America/New_York instead of UTC. zoneinfo handles DST, so the
+# boundary tracks EST/EDT automatically.
+TRADING_TZ = ZoneInfo("America/New_York")
+
+
+def trading_day(as_of: datetime) -> date:
+    """The NYSE calendar day containing `as_of` (DST-aware)."""
+    return as_of.astimezone(TRADING_TZ).date()
 
 
 class Portfolio:
@@ -105,6 +119,29 @@ class Portfolio:
         logger.info("portfolio.rehydrated", fills=count, skipped=skipped,
                     cash=str(self.cash), open_positions=len(self.positions))
 
+    def seed_prices(self, last_ticks: dict[str, EventEnvelope]) -> None:
+        """Seed last-known prices from the most recent persisted ``market.tick``
+        per instrument so unrealized P&L is correct immediately after a restart.
+
+        Without this, ``rehydrate`` leaves every position's ``current_price`` at
+        its entry price (unrealized P&L = 0) until the *next* live tick arrives —
+        which, after the close, never comes for equities, so the panel reads $0
+        all evening. Replaying the last stored tick restores the real mark.
+
+        Call after :meth:`rehydrate` and before :meth:`start`.
+        """
+        seeded = 0
+        for instrument, envelope in last_ticks.items():
+            price_str = envelope.payload.get("price")
+            if not price_str:
+                continue
+            price = Decimal(str(price_str))
+            self._prices[instrument] = price
+            if instrument in self.positions:
+                self.positions[instrument].current_price = price
+                seeded += 1
+        logger.info("portfolio.prices_seeded", instruments=len(last_ticks), positions=seeded)
+
     # ------------------------------------------------------------------
     # Queries (used by risk engine and API routes)
     # ------------------------------------------------------------------
@@ -142,25 +179,39 @@ class Portfolio:
 
     @property
     def daily_trades(self) -> list[dict[str, object]]:
-        """All fills (open and close) for the current UTC day, in fill order."""
-        return self._daily_trades
+        """All fills (open and close) for the current UTC day, in fill order.
+
+        Day-aware against the wall clock: like ``daily_realized_pnl``, this reads
+        empty once the clock crosses past the accumulator's day. The underlying
+        ``_daily_trades`` list is only physically cleared by a fill-triggered
+        rollover, so without this check a day with no trading would keep
+        displaying the prior day's trades while ``daily_realized_pnl`` already
+        reads 0 — the two would disagree.
+        """
+        if self._is_current_day(datetime.now(UTC)):
+            return list(self._daily_trades)
+        return []
+
+    def _is_current_day(self, as_of: datetime) -> bool:
+        """True while `as_of` is still within the accumulator's NYSE day."""
+        return self._daily_date is not None and trading_day(as_of) <= self._daily_date
 
     def daily_realized_pnl(self, as_of: datetime) -> Decimal:
-        """Realized P&L for the UTC day containing `as_of` (event-time keyed).
+        """Realized P&L for the NYSE day containing `as_of` (event-time keyed).
 
         Returns 0 once `as_of` has advanced past the day of the last recorded
         close — the prior day's losses no longer count against the daily breaker.
         Callers in financial logic must pass an event clock; display/ops callers
         may pass the wall clock.
         """
-        if self._daily_date is None or as_of.astimezone(UTC).date() > self._daily_date:
+        if not self._is_current_day(as_of):
             return Decimal("0")
         return self._daily_pnl
 
     def _rollover_if_new_day(self, as_of: datetime) -> None:
-        """Advance the daily accumulator to the UTC day of `as_of`, resetting it
+        """Advance the daily accumulator to the NYSE day of `as_of`, resetting it
         to zero when the day changes."""
-        day = as_of.astimezone(UTC).date()
+        day = trading_day(as_of)
         if self._daily_date is None:
             self._daily_date = day
         elif day > self._daily_date:
@@ -188,7 +239,7 @@ class Portfolio:
                 }
                 for inst, p in self.positions.items()
             },
-            "trades": list(self._daily_trades),
+            "trades": self.daily_trades,
         }
 
     # ------------------------------------------------------------------

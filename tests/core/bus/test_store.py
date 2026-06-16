@@ -108,3 +108,31 @@ class TestRange:
         result = await store.range(["market.tick", "signal.created"])
         assert [e.event_type for e in result] == ["market.tick", "signal.created"]
         assert await store.range([]) == []
+
+
+class TestLatestPerKey:
+    async def test_returns_newest_per_instrument(self, store: SqliteEventStore) -> None:
+        await store.append(_envelope("market.tick", 0, {"instrument": "BTC", "price": "1"}))
+        await store.append(_envelope("market.tick", 60, {"instrument": "BTC", "price": "2"}))
+        await store.append(_envelope("market.tick", 30, {"instrument": "ETH", "price": "9"}))
+
+        result = await store.latest_per_key(["market.tick"], "instrument")
+        assert set(result) == {"BTC", "ETH"}
+        assert result["BTC"].payload["price"] == "2"  # the later tick
+        assert result["ETH"].payload["price"] == "9"
+
+    async def test_ignores_other_types_and_missing_key(self, store: SqliteEventStore) -> None:
+        await store.append(_envelope("market.tick", 0, {"instrument": "BTC", "price": "1"}))
+        await store.append(_envelope("signal.created", 1, {"instrument": "BTC"}))
+        await store.append(_envelope("market.tick", 2, {"price": "no-instrument"}))
+
+        result = await store.latest_per_key(["market.tick"], "instrument")
+        assert set(result) == {"BTC"}
+        assert result["BTC"].payload["price"] == "1"
+
+    async def test_empty_types(self, store: SqliteEventStore) -> None:
+        assert await store.latest_per_key([], "instrument") == {}
+
+    async def test_rejects_bad_key_field(self, store: SqliteEventStore) -> None:
+        with pytest.raises(ValueError):
+            await store.latest_per_key(["market.tick"], "x'; DROP TABLE events;--")

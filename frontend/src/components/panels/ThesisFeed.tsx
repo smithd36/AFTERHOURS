@@ -100,9 +100,10 @@ function ThesisItem({ row }: { row: ThesisRow }) {
 
 interface ThesisFeedProps {
   theses: ThesisRow[];
+  collapsible?: boolean;
 }
 
-export function ThesisFeed({ theses }: ThesisFeedProps) {
+export function ThesisFeed({ theses, collapsible }: ThesisFeedProps) {
   const active = useMemo(() => theses.filter((t) => t.status === "active").length, [theses]);
 
   return (
@@ -113,6 +114,7 @@ export function ThesisFeed({ theses }: ThesisFeedProps) {
           ? `${active} ACTIVE · ${theses.length} TOTAL`
           : undefined
       }
+      collapsible={collapsible}
     >
       {theses.length === 0 ? (
         <p className="px-3 py-6 text-center text-xs text-muted-foreground">

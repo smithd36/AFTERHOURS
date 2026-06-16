@@ -144,6 +144,9 @@ async def default_lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
     # subscribing — otherwise a restart resets cash to initial_cash and drops
     # open positions, corrupting the autonomy gate's P&L evidence window.
     await portfolio.rehydrate(await store.range([EventType.ORDER_FILLED.value]))
+    # Seed marks from the last persisted tick per instrument so unrealized P&L is
+    # correct on restart even when the market is closed and no live tick will come.
+    portfolio.seed_prices(await store.latest_per_key([EventType.MARKET_TICK.value], "instrument"))
     await portfolio.start()
 
     risk_engine = RiskEngine(bus, portfolio, modes=mode_controller)

@@ -7,6 +7,8 @@ from decimal import Decimal
 
 from fastapi import APIRouter, HTTPException, Query, Request
 
+from portfolio.ledger import TRADING_TZ, trading_day
+
 router = APIRouter(prefix="/api/portfolio", tags=["portfolio"])
 
 
@@ -40,7 +42,7 @@ async def get_trades(
     portfolio = request.app.state.portfolio
 
     if date is None:
-        today = datetime.now(UTC).date()
+        today = trading_day(datetime.now(UTC))
         return {"date": str(today), "trades": portfolio.daily_trades}
 
     try:
@@ -48,12 +50,14 @@ async def get_trades(
     except ValueError:
         raise HTTPException(status_code=400, detail="date must be YYYY-MM-DD")
 
-    today = datetime.now(UTC).date()
+    today = trading_day(datetime.now(UTC))
     if target == today:
         return {"date": str(today), "trades": portfolio.daily_trades}
 
     store = request.app.state.event_store
-    start = datetime(target.year, target.month, target.day, tzinfo=UTC)
+    # Bound the NYSE calendar day, matching the live ledger's rollover. A trade at
+    # e.g. 21:00 ET (next UTC day) belongs to its ET session, not the UTC date.
+    start = datetime(target.year, target.month, target.day, tzinfo=TRADING_TZ)
     end = start + timedelta(days=1)
 
     day_fills = await store.range(["order.filled"], start=start, end=end)

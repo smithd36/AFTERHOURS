@@ -52,6 +52,15 @@ class EventStore(Protocol):
     ) -> list[EventEnvelope]:
         """All events of the given types within [start, end], oldest-first."""
 
+    async def latest_per_key(
+        self, event_types: list[str], key_field: str
+    ) -> dict[str, EventEnvelope]:
+        """The most recent event (by event_time) for each distinct value of
+        ``payload[key_field]``, among events of the given types.
+
+        Generic 'last value per series' query — e.g. the latest market.tick per
+        instrument, for seeding marks on restart. Returns {key: envelope}."""
+
     async def prune(self, event_types: list[str], before: datetime) -> int:
         """Delete events of the given types older than `before`. Returns count deleted."""
 
@@ -104,6 +113,21 @@ class InMemoryEventStore:
             and (end is None or e.event_time <= end)
         ]
         return sorted(matching, key=lambda e: e.event_time)
+
+    async def latest_per_key(
+        self, event_types: list[str], key_field: str
+    ) -> dict[str, EventEnvelope]:
+        result: dict[str, EventEnvelope] = {}
+        for e in self.events:  # appended in arrival order
+            if e.event_type not in event_types:
+                continue
+            key = e.payload.get(key_field)
+            if key is None:
+                continue
+            cur = result.get(str(key))
+            if cur is None or e.event_time >= cur.event_time:
+                result[str(key)] = e
+        return result
 
     async def prune(self, event_types: list[str], before: datetime) -> int:
         before_count = len(self.events)
@@ -285,6 +309,55 @@ class SqliteEventStore:
             )
             for row in rows
         ]
+
+    async def latest_per_key(
+        self, event_types: list[str], key_field: str
+    ) -> dict[str, EventEnvelope]:
+        """Latest event per distinct ``payload[key_field]``, by event_time.
+
+        Uses SQLite's documented bare-column rule: with exactly one MAX() and a
+        GROUP BY, the other selected columns come from the max row — so MAX(event_time)
+        picks the most recent event in each group. event_time is the ISO-8601 "…Z"
+        string written by the JSON serializer, which sorts chronologically, matching
+        the ordering assumption in range()."""
+        if not event_types:
+            return {}
+        # key_field is caller-supplied code, never user input, but keep it identifier-
+        # safe so it can be interpolated into the json path without injection risk.
+        if not key_field.isidentifier():
+            raise ValueError(f"invalid key_field: {key_field!r}")
+        path = f"$.{key_field}"
+        placeholders = ", ".join("?" * len(event_types))
+        cursor = await self._conn.execute(
+            f"""
+            SELECT id, event_type, source, schema_version,
+                   MAX(event_time), ingest_time, correlation_id, payload
+            FROM events
+            WHERE event_type IN ({placeholders})
+              AND json_extract(payload, ?) IS NOT NULL
+            GROUP BY json_extract(payload, ?)
+            """,
+            (*event_types, path, path),
+        )
+        rows = await cursor.fetchall()
+        await cursor.close()
+
+        result: dict[str, EventEnvelope] = {}
+        for row in rows:
+            envelope = EventEnvelope(
+                id=row[0],
+                event_type=row[1],
+                source=row[2],
+                schema_version=row[3],
+                event_time=row[4],
+                ingest_time=row[5],
+                correlation_id=row[6],
+                payload=json.loads(row[7]),
+            )
+            key = envelope.payload.get(key_field)
+            if key is not None:
+                result[str(key)] = envelope
+        return result
 
     async def prune(self, event_types: list[str], before: datetime) -> int:
         """Delete events older than `before` for the given types. Returns rows deleted."""

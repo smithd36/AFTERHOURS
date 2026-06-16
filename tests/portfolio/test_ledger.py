@@ -2,8 +2,9 @@
 
 from __future__ import annotations
 
-from datetime import UTC, datetime
+from datetime import UTC, datetime, timedelta
 from decimal import Decimal
+from zoneinfo import ZoneInfo
 
 import pytest
 
@@ -235,3 +236,69 @@ async def test_losing_short_decreases_total_value(
     assert portfolio.unrealized_pnl == Decimal("-100")
     assert portfolio.total_value == Decimal("9900")
     assert portfolio.total_value < initial  # the bug: this used to *rise* to 10100
+
+
+async def test_daily_trades_roll_off_after_utc_midnight(
+    bus: InProcessBus, portfolio: Portfolio
+) -> None:
+    """After a UTC day boundary with no new fills, the daily-trades view and
+    daily_realized_pnl must agree — both read empty/0 for the prior day.
+
+    Regression: _daily_trades was only cleared by a fill-triggered rollover, so a
+    day with no trading kept showing yesterday's trades while daily_realized_pnl
+    had already rolled to 0."""
+    yesterday = datetime.now(UTC) - timedelta(days=1)
+    await bus.publish(_fill_event(
+        "BTC-USD", "open", "long", "50000", "0.01", "500", event_time=yesterday))
+    await bus.publish(_fill_event(
+        "BTC-USD", "close", "long", "49000", "0.01", "490", event_time=yesterday))
+
+    # Today (now): the accumulator's day is yesterday → both must read empty/0.
+    assert portfolio.daily_realized_pnl(datetime.now(UTC)) == Decimal("0")
+    assert portfolio.daily_trades == []
+    assert portfolio.snapshot()["trades"] == []
+
+
+async def test_daily_pnl_keyed_to_nyse_day_not_utc(
+    bus: InProcessBus, portfolio: Portfolio
+) -> None:
+    """The day's realized P&L must persist through the ET evening even after UTC
+    has rolled to the next date — and only reset at ET midnight.
+
+    Bug: a close at 15:00 ET (19:00 UTC) queried at 21:00 ET (01:00 UTC next day)
+    read 0 because the UTC date had advanced, blanking the panel every evening."""
+    et = ZoneInfo("America/New_York")
+    afternoon = datetime(2026, 6, 15, 15, 0, tzinfo=et)   # 19:00 UTC, 6-15
+    await bus.publish(_fill_event("AAPL", "open", "long", "100", "1", "100",
+                                  event_time=afternoon))
+    await bus.publish(_fill_event("AAPL", "close", "long", "90", "1", "0",
+                                  event_time=afternoon))
+
+    # 21:00 ET same session = 01:00 UTC on 6-16. UTC date advanced, ET date hasn't.
+    evening = datetime(2026, 6, 15, 21, 0, tzinfo=et)
+    assert evening.astimezone(UTC).date() > afternoon.astimezone(UTC).date()  # UTC rolled
+    assert portfolio.daily_realized_pnl(evening) == Decimal("-10")  # ET day still open
+
+    # Past ET midnight → resets.
+    next_day = datetime(2026, 6, 16, 0, 30, tzinfo=et)
+    assert portfolio.daily_realized_pnl(next_day) == Decimal("0")
+
+
+async def test_seed_prices_restores_unrealized_pnl_after_restart(bus: InProcessBus) -> None:
+    """A restart leaves positions marked at entry (unrealized = 0) until seeded
+    from the last persisted tick — critical after hours when no live tick comes."""
+    day = datetime(2026, 6, 15, 14, 0, tzinfo=UTC)
+    fresh = Portfolio(bus)
+    await fresh.rehydrate([
+        _fill_event("AAPL", "open", "long", "100", "10", "1000", event_time=day),
+    ])
+    assert fresh.unrealized_pnl == Decimal("0")  # marked at entry, no tick yet
+
+    tick = EventEnvelope(
+        event_type=EventType.MARKET_TICK, source="test",
+        event_time=day, ingest_time=day,
+        payload={"instrument": "AAPL", "price": "105", "volume": "1"},
+    )
+    fresh.seed_prices({"AAPL": tick})
+    assert fresh.positions["AAPL"].current_price == Decimal("105")
+    assert fresh.unrealized_pnl == Decimal("50")  # (105 - 100) * 10

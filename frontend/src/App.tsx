@@ -11,6 +11,7 @@ import {
   CandlestickChart,
   Gauge,
   Gavel,
+  ListChecks,
   Radio,
   Wallet,
   type LucideIcon,
@@ -23,7 +24,7 @@ import { MarketWatch } from "@/components/panels/MarketWatch";
 import { PortfolioPanel } from "@/components/panels/PortfolioPanel";
 import { SignalFeed } from "@/components/panels/SignalFeed";
 import { ThesisFeed } from "@/components/panels/ThesisFeed";
-import { WatchlistPanel } from "@/components/panels/WatchlistPanel";
+import { WatchlistDrawer } from "@/components/layout/WatchlistDrawer";
 import { useBackfill } from "@/hooks/useBackfill";
 import { useCalibration } from "@/hooks/useCalibration";
 import { useDecisions } from "@/hooks/useDecisions";
@@ -194,6 +195,70 @@ function HaltButton({ onHalt, pulsing }: { onHalt: () => void; pulsing?: boolean
   );
 }
 
+type View = "terminal" | "review";
+
+/** Desktop-only: switch between the live Terminal and the Review surface. */
+function ViewSwitcher({
+  view,
+  onChange,
+  pending,
+}: {
+  view: View;
+  onChange: (v: View) => void;
+  pending: number;
+}) {
+  const views: { id: View; label: string }[] = [
+    { id: "terminal", label: "Terminal" },
+    { id: "review", label: "Review" },
+  ];
+  return (
+    <div className="flex items-center gap-0.5 rounded border border-border p-0.5">
+      {views.map((v) => {
+        // The act-surface lives in Terminal; surface a pending dot there so an
+        // approval raised while in Review still pulls the operator back.
+        const showDot = v.id === "terminal" && pending > 0 && view !== "terminal";
+        return (
+          <button
+            key={v.id}
+            onClick={() => onChange(v.id)}
+            aria-pressed={view === v.id}
+            aria-label={showDot ? `${v.label}, ${pending} pending approval${pending !== 1 ? "s" : ""}` : undefined}
+            className={cn(
+              "relative rounded px-2.5 py-0.5 text-[11px] font-semibold uppercase tracking-wider transition-colors focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring",
+              view === v.id
+                ? "bg-secondary text-foreground"
+                : "text-muted-foreground/60 hover:text-muted-foreground",
+            )}
+          >
+            {v.label}
+            {showDot && (
+              <span
+                aria-hidden="true"
+                className="absolute -right-0.5 -top-0.5 h-1.5 w-1.5 rounded-full bg-warning"
+              />
+            )}
+          </button>
+        );
+      })}
+    </div>
+  );
+}
+
+function WatchlistButton({ count, onClick }: { count: number; onClick: () => void }) {
+  return (
+    <button
+      onClick={onClick}
+      title="Manage watchlist [W]"
+      aria-keyshortcuts="w"
+      aria-label={`Manage watchlist, ${count} instrument${count !== 1 ? "s" : ""}`}
+      className="flex items-center gap-1.5 rounded border border-border px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wider text-muted-foreground transition-colors hover:border-muted-foreground/60 hover:text-foreground focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring pointer-coarse:min-h-11 pointer-coarse:px-3 pointer-coarse:text-[11px]"
+    >
+      <ListChecks className="h-3.5 w-3.5" strokeWidth={1.75} />
+      <span className="tabular-nums">{count}</span>
+    </button>
+  );
+}
+
 function MobileTabBar({
   tabs,
   active,
@@ -322,6 +387,11 @@ export default function App() {
           e.preventDefault();
           void handleModeChange("assisted");
           break;
+        case "w":
+        case "W":
+          e.preventDefault();
+          setWatchlistOpen((o) => !o);
+          break;
       }
     };
     document.addEventListener("keydown", onKeyDown);
@@ -382,6 +452,8 @@ export default function App() {
   // branch renders at a time, so each panel mounts once.
   const isDesktop = useMediaQuery("(min-width: 1024px)");
   const [activeTab, setActiveTab] = useState<TabId>("markets");
+  const [view, setView] = useState<View>("terminal");
+  const [watchlistOpen, setWatchlistOpen] = useState(false);
 
   // Pending approvals mirror DecisionQueue's own filter — drives the tab badge.
   const pendingCount = useMemo(
@@ -403,15 +475,6 @@ export default function App() {
       onReject={handleReject}
     />
   );
-  const watchlist = (
-    <WatchlistPanel
-      entries={watchlistEntries}
-      loading={watchlistLoading}
-      ticks={ticks}
-      onAdd={watchlistAdd}
-      onRemove={watchlistRemove}
-    />
-  );
   const portfolio = <PortfolioPanel snapshot={snapshot} decisions={decisions} />;
   const calibration = <CalibrationPanel report={report} gates={gates} />;
 
@@ -429,12 +492,7 @@ export default function App() {
     signals: signalFeed,
     theses: thesisFeed,
     decisions: decisionQueue,
-    book: (
-      <div className="space-y-2">
-        {watchlist}
-        {portfolio}
-      </div>
-    ),
+    book: portfolio,
     calib: calibration,
   };
 
@@ -447,10 +505,21 @@ export default function App() {
         <span className="brand-logo order-1 text-xs font-semibold tracking-[0.25em] text-muted-foreground">
           AFTERHOURS
         </span>
+        {isDesktop && (
+          <div className="order-1">
+            <ViewSwitcher view={view} onChange={setView} pending={pendingCount} />
+          </div>
+        )}
         {/* Controls: own full-width row on phones, inline on the right at sm+. */}
         <div className="order-3 flex w-full items-center justify-between gap-2 sm:order-2 sm:ml-auto sm:w-auto sm:justify-end sm:gap-3">
           <ModeIndicator mode={mode} onChange={handleModeChange} />
-          <HaltButton onHalt={handleHalt} pulsing={mode === "assisted"} />
+          <div className="flex items-center gap-2 sm:gap-3">
+            <WatchlistButton
+              count={watchlistEntries.length}
+              onClick={() => setWatchlistOpen(true)}
+            />
+            <HaltButton onHalt={handleHalt} pulsing={mode === "assisted"} />
+          </div>
         </div>
         <div className="order-2 ml-auto flex items-center gap-2 sm:order-3 sm:ml-0 sm:gap-3">
           <MarketClock />
@@ -461,22 +530,36 @@ export default function App() {
       <FeedHealthBar feeds={feedHealth} />
 
       {isDesktop ? (
-        <main className="flex-1 overflow-auto p-4">
-          <div className="grid grid-cols-1 gap-2 lg:grid-cols-2 xl:grid-cols-3">
-            {/* Row 1: live market data */}
-            <div className="xl:col-span-2">{marketWatch}</div>
-            {signalFeed}
-
-            {/* Row 2: analysis + action */}
-            <div className="xl:col-span-2">{thesisFeed}</div>
-            {decisionQueue}
-
-            {/* Row 3: utilities */}
-            {watchlist}
-            {portfolio}
-            {calibration}
-          </div>
-        </main>
+        view === "terminal" ? (
+          // Live operation: the flow scrolls on the left, the Decision Queue is
+          // pinned as a rail on the right so the act-surface never scrolls away.
+          <main className="flex min-h-0 flex-1 gap-2 overflow-hidden p-3">
+            <div className="flex min-h-0 flex-1 flex-col gap-2 overflow-y-auto pr-1">
+              <MarketWatch ticks={ticks} collapsible />
+              <SignalFeed signals={signals} collapsible />
+              <ThesisFeed theses={theses} collapsible />
+            </div>
+            <aside className="flex w-[22rem] shrink-0 flex-col overflow-y-auto xl:w-[26rem]">
+              {decisionQueue}
+            </aside>
+          </main>
+        ) : (
+          // Review: portfolio standing + calibration, read between sessions.
+          // DecisionQueue is unmounted here, so its live region is too — this
+          // shell-level one keeps pending approvals audible (the dot on the
+          // Terminal switch is the visual counterpart).
+          <main className="min-h-0 flex-1 overflow-y-auto p-3">
+            <span className="sr-only" aria-live="assertive" aria-atomic="true">
+              {pendingCount > 0
+                ? `${pendingCount} decision${pendingCount !== 1 ? "s" : ""} pending approval`
+                : ""}
+            </span>
+            <div className="mx-auto grid max-w-5xl grid-cols-1 gap-2 xl:grid-cols-2">
+              {portfolio}
+              {calibration}
+            </div>
+          </main>
+        )
       ) : (
         <>
           {/* DecisionQueue's own live region only exists while its tab is
@@ -500,6 +583,16 @@ export default function App() {
           <MobileTabBar tabs={tabs} active={activeTab} onChange={setActiveTab} />
         </>
       )}
+
+      <WatchlistDrawer
+        open={watchlistOpen}
+        onOpenChange={setWatchlistOpen}
+        entries={watchlistEntries}
+        loading={watchlistLoading}
+        ticks={ticks}
+        onAdd={watchlistAdd}
+        onRemove={watchlistRemove}
+      />
     </div>
   );
 }
