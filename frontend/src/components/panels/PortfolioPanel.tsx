@@ -1,7 +1,7 @@
 import { useMemo, useState } from "react";
 import { cn } from "@/lib/utils";
 import { PanelShell } from "@/components/layout/PanelShell";
-import type { PortfolioSnapshot, PositionSnapshot } from "@/hooks/usePortfolio";
+import type { PortfolioSnapshot, PositionSnapshot, TradeRecord } from "@/hooks/usePortfolio";
 import type { DecisionRow, EvidenceItem } from "@/hooks/useDecisions";
 import type { EventEnvelope } from "@/types/core";
 
@@ -171,6 +171,81 @@ function PositionCard({
   );
 }
 
+function TodaysTrades({ trades }: { trades: TradeRecord[] }) {
+  const [open, setOpen] = useState(false);
+  if (trades.length === 0) return null;
+  return (
+    <div className="rounded-sm bg-muted/60 p-2">
+      <button
+        type="button"
+        onClick={() => setOpen((v) => !v)}
+        className="flex w-full items-center gap-1.5 text-left text-[11px] font-semibold uppercase tracking-wider text-muted-foreground focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring rounded-sm"
+      >
+        <span>{open ? "▾" : "▸"}</span>
+        <span>Today's trades ({trades.length})</span>
+      </button>
+      {open && (
+        <div className="mt-1.5 space-y-0.5 border-t border-border/60 pt-1.5">
+          {trades.map((t, i) => (
+            <TradeRow key={`${t.decision_id}-${t.action}-${i}`} trade={t} />
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}
+
+function TradeRow({ trade }: { trade: TradeRecord }) {
+  // 24h clock avoids AM/PM ambiguity; fills can happen outside equity hours (crypto, paper)
+  const time = new Date(trade.ts).toLocaleTimeString([], {
+    hour: "2-digit",
+    minute: "2-digit",
+    hour12: false,
+  });
+  const isClose = trade.action === "close";
+  const exitPrice = parseFloat(trade.fill_price).toLocaleString();
+  const entryPrice = trade.entry_price ? parseFloat(trade.entry_price).toLocaleString() : null;
+
+  return (
+    <div className="flex items-center gap-1.5 py-0.5 text-[11px] font-mono">
+      <span className="w-11 shrink-0 text-muted-foreground">{time}</span>
+      <span className="w-14 shrink-0 font-semibold">{trade.instrument}</span>
+
+      {/* Action badge */}
+      <span className={cn(
+        "shrink-0 rounded px-1 py-0.5 text-[10px] font-bold uppercase tracking-wider",
+        isClose ? "bg-muted text-muted-foreground" : "bg-primary/15 text-primary",
+      )}>
+        {isClose ? "CLOSE" : "OPEN"}
+      </span>
+
+      {/* Side badge — always shown */}
+      <span className={cn(
+        "shrink-0 rounded px-1 py-0.5 text-[10px] font-bold uppercase tracking-wider",
+        trade.side === "long" ? "bg-bullish/20 text-bullish" : "bg-bearish/20 text-bearish",
+      )}>
+        {trade.side}
+      </span>
+
+      {/* Price info */}
+      <span className="min-w-0 flex-1 truncate text-right text-muted-foreground">
+        {isClose && entryPrice
+          ? <>{entryPrice} → {exitPrice}</>
+          : <>@{exitPrice}</>}
+      </span>
+
+      {/* Right-most: P&L for closes, notional for opens */}
+      {isClose && trade.realized_pnl !== null ? (
+        <PnlValue value={trade.realized_pnl} />
+      ) : (
+        <span className="shrink-0 text-muted-foreground">
+          ${parseFloat(trade.cost_usd).toFixed(2)}
+        </span>
+      )}
+    </div>
+  );
+}
+
 export function PortfolioPanel({ snapshot, decisions }: Props) {
   const positions = useMemo(
     () => (snapshot ? Object.entries(snapshot.positions) : []),
@@ -233,6 +308,9 @@ export function PortfolioPanel({ snapshot, decisions }: Props) {
             ))}
           </div>
         )}
+
+        {/* Today's trades */}
+        <TodaysTrades trades={snapshot.trades} />
       </div>
     </PanelShell>
   );

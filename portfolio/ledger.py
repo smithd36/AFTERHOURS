@@ -48,6 +48,10 @@ class Portfolio:
         # restart — rehydrate() replays every order.filled through close_position.
         self._realized_trades: list[Decimal] = []
 
+        # Ordered list of all fills (open and close) for the current UTC day.
+        # Cleared on day rollover alongside _daily_pnl. Rebuilt from rehydrate().
+        self._daily_trades: list[dict[str, object]] = []
+
     async def start(self) -> None:
         self._fill_sub = await self._bus.subscribe(EventType.ORDER_FILLED, self._handle_fill)
         self._tick_sub = await self._bus.subscribe(EventType.MARKET_TICK, self._handle_tick)
@@ -136,6 +140,11 @@ class Portfolio:
         """Net-of-fee realized P&L per closed round-trip, in close order."""
         return self._realized_trades
 
+    @property
+    def daily_trades(self) -> list[dict[str, object]]:
+        """All fills (open and close) for the current UTC day, in fill order."""
+        return self._daily_trades
+
     def daily_realized_pnl(self, as_of: datetime) -> Decimal:
         """Realized P&L for the UTC day containing `as_of` (event-time keyed).
 
@@ -157,6 +166,7 @@ class Portfolio:
         elif day > self._daily_date:
             self._daily_date = day
             self._daily_pnl = Decimal("0")
+            self._daily_trades = []
 
     def snapshot(self) -> dict[str, object]:
         return {
@@ -178,6 +188,7 @@ class Portfolio:
                 }
                 for inst, p in self.positions.items()
             },
+            "trades": list(self._daily_trades),
         }
 
     # ------------------------------------------------------------------
@@ -194,6 +205,7 @@ class Portfolio:
         entry_fee: Decimal,
         stop_price: Decimal | None,
         decision_id: str,
+        event_time: datetime,
     ) -> None:
         # cost_usd is the position notional; the entry fee is a separate cash
         # outflow that must also be booked into realized P&L at close (it is
@@ -216,6 +228,19 @@ class Portfolio:
             entry_fee=entry_fee,
             decision_id=decision_id,
         )
+        self._rollover_if_new_day(event_time)
+        self._daily_trades.append({
+            "instrument": instrument,
+            "action": "open",
+            "side": side.value,
+            "fill_price": str(fill_price),
+            "quantity": str(quantity),
+            "fee": str(entry_fee),
+            "cost_usd": str(cost_usd),
+            "decision_id": decision_id,
+            "ts": event_time.astimezone(UTC).isoformat(),
+            "realized_pnl": None,
+        })
         logger.info("portfolio.position_opened", instrument=instrument, side=side.value,
                     fill_price=str(fill_price), quantity=str(quantity), entry_fee=str(entry_fee))
 
@@ -249,6 +274,19 @@ class Portfolio:
         self._rollover_if_new_day(event_time)
         self._daily_pnl += realized
         self._realized_trades.append(realized)
+        self._daily_trades.append({
+            "instrument": instrument,
+            "action": "close",
+            "side": position.side.value,
+            "entry_price": str(position.entry_price),
+            "fill_price": str(fill_price),
+            "quantity": str(position.quantity),
+            "fee": str(fee),
+            "cost_usd": str(fill_price * position.quantity),
+            "decision_id": position.decision_id,
+            "ts": event_time.astimezone(UTC).isoformat(),
+            "realized_pnl": str(realized),
+        })
         logger.info("portfolio.position_closed", instrument=instrument,
                     realized_pnl=str(realized), fill_price=str(fill_price))
         return realized
@@ -291,6 +329,7 @@ class Portfolio:
                 entry_fee=fee,
                 stop_price=stop_price,
                 decision_id=decision_id,
+                event_time=envelope.event_time,
             )
         elif action == "close":
             self.close_position(instrument, fill_price, fee, envelope.event_time)

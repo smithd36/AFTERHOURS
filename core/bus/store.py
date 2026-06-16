@@ -44,6 +44,14 @@ class EventStore(Protocol):
     ) -> list[EventEnvelope]:
         """Most-recent `limit` events of the given types, oldest-first."""
 
+    async def range(
+        self,
+        event_types: list[str],
+        start: datetime | None = None,
+        end: datetime | None = None,
+    ) -> list[EventEnvelope]:
+        """All events of the given types within [start, end], oldest-first."""
+
     async def prune(self, event_types: list[str], before: datetime) -> int:
         """Delete events of the given types older than `before`. Returns count deleted."""
 

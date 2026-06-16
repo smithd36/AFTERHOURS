@@ -11,6 +11,20 @@ export interface PositionSnapshot {
   decision_id: string;
 }
 
+export interface TradeRecord {
+  instrument: string;
+  action: "open" | "close";
+  side: "long" | "short";
+  entry_price?: string;  // close fills only
+  fill_price: string;
+  quantity: string;
+  fee: string;
+  cost_usd: string;
+  decision_id: string;
+  ts: string;
+  realized_pnl: string | null;
+}
+
 export interface PortfolioSnapshot {
   cash: string;
   total_value: string;
@@ -18,6 +32,7 @@ export interface PortfolioSnapshot {
   daily_realized_pnl: string;
   open_positions: number;
   positions: Record<string, PositionSnapshot>;
+  trades: TradeRecord[];
 }
 
 const POLL_INTERVAL_MS = 2000;
