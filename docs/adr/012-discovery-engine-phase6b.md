@@ -1,6 +1,6 @@
 # ADR-012: Discovery Engine — Phase 6B (Multi-Source Opportunity Surfacing)
 
-**Status:** Accepted
+**Status:** Accepted — **6B.1 implemented 2026-06-16** (`discovery/`, `/api/discovery`, Discover workspace, AI analyst); 6B.2 (breadth scanner / crypto-primary / auto-add + liquidity) pending
 **Date:** 2026-06-16 (amended same day: MVP scoring execution model set to **pull-first** — see *Scoring execution model* and *Sequencing*)
 **Deciders:** Operator, @smithd36
 
@@ -43,7 +43,7 @@ sources → SignalExtractors → EntityResolver → ConvictionAccumulator → Di
                                                                             │
                                                     AIAnalyst (top-K) → discovery.analysis
                                                                             │
-                                                         Discovery panel → watchlist add
+                                                       Discover workspace → watchlist add
 ```
 
 The pipeline stages are the same regardless of *when* scoring runs; the next section settles that.

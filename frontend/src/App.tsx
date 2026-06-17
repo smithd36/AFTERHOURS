@@ -545,7 +545,7 @@ export default function App() {
       onRemove={watchlistRemove}
     />
   );
-  const discoveryFeed = <DiscoveryFeed />;
+  const discoveryFeed = <DiscoveryFeed onAdd={watchlistAdd} />;
 
   // Mobile bottom-bar tabs for the active workspace; the decisions badge is the
   // only dynamic bit.

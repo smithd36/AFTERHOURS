@@ -113,6 +113,16 @@ Paper trading ledger and execution.
 | `portfolio/models.py` | `Position` (with stored `entry_fee`), `Order` (with `client_order_id`), and snapshot models |
 | `portfolio/settings.py` | `PORTFOLIO_INITIAL_CASH`, `PORTFOLIO_SLIPPAGE_PCT`, `PORTFOLIO_FEE_PCT` |
 
+### `analytics/`
+
+Phase 4+ (ADR-011): the **economic** half of the two-gate split — risk/return measurement, kept separate from confidence calibration. Pure, stateless functions plus an on-demand equity-curve projection; no state on `app.state`, no new event type. The economic gate (`calibration/gates.py`) and the portfolio panel both consume `economic_metrics` from here.
+
+| Module | Responsibility |
+|---|---|
+| `analytics/metrics.py` | Pure risk/return functions over a return series — `sharpe`, `sortino`, `volatility`, `historical_var`, `equity_drawdown` — plus `economic_metrics` (expectancy/win-rate/profit-factor/drawdown on the realized-trade curve, moved here from `calibration/gates.py`). Calendar-daily series (24/7 crypto + equities), so annualization uses **365**, not 252 |
+| `analytics/equity_curve.py` | `build_equity_curve` — mark-to-market daily equity as a read-side projection: replays `order.filled` through the *same* `Portfolio` ledger math + marks open positions at each day's last `market.tick`. Event-time keyed, so it reproduces under backtest replay (ADR-011) |
+| `analytics/pnl.py` | `realized_pnl` — fill-pairing P&L reconstruction (open→close), extracted so the `/trades` route, the equity curve, and future backtest attribution share one formula |
+
 ### `calibration/`
 
 Phase 4: outcome resolution and the calibration north-star metric (PLANNING §1.5). Everything here is driven by tick `event_time`, never the wall clock, so the same components run identically live and in backtest replay.
@@ -123,6 +133,18 @@ Phase 4: outcome resolution and the calibration north-star metric (PLANNING §1.
 | `calibration/engine.py` | `CalibrationEngine` — reliability table (confidence buckets vs hit rate) and ECE, overall and segmented by autonomy mode at proposal time |
 | `calibration/gates.py` | `GateTracker` — evaluates the measurable Appendix B graduation criteria (sample size, ECE, span, limit breaches); unmeasurable criteria are reported as deferred, never silently passed |
 | `calibration/settings.py` | `CALIBRATION_*` — horizon durations, ECE buckets, gate thresholds |
+
+### `discovery/`
+
+Phase 6B (ADR-012): multi-source opportunity surfacing — fuse weak signals across sources into ranked, explained candidates of *unwatched* instruments worth investigating earlier than standard tools. **Pull-first**: the score is a read-side projection over persisted `signal.created` events (the ADR-011 equity-curve pattern), not a bus subscriber, so it adds no event type and no stateful state. **6B.1 shipped (disclosure-driven, equity-primary); 6B.2 (breadth scanner, crypto-primary, auto-add) is pending.** Depends on `core/` and the `reasoning.llm` abstraction (the analyst); the scoring core stays core-only.
+
+| Module | Responsibility |
+|---|---|
+| `discovery/extract.py` + `resolve.py` | Map a persisted `signal.created` into signed, factor-tagged Contributions; resolve to a canonical instrument key (drop-on-ambiguous) |
+| `discovery/score.py` | The confluence accumulator — **max within a factor** (correlated sources don't double-count) → **noisy-OR across factors** (distinct evidence compounds) + confluence bonus, per-source time-decay; bearish evidence subtracts |
+| `discovery/engine.py` | `build_candidates` — the on-demand projection: replays the lookback window, excludes watched instruments, ranks top-k ≥ threshold |
+| `discovery/analyst.py` | `AIAnalyst` — lazy, operator-triggered LLM pass over one candidate (why-interesting + counter-signals; explains, never decides). Reuses the shared `reasoning.llm` provider, so cache + throttle apply |
+| `discovery/settings.py` | `DISCOVERY_*` — window, threshold, top-k, confluence bonus, per-factor weight/half-life defaults, analyst token cap |
 
 ### `gateway/`
 
@@ -138,7 +160,9 @@ The FastAPI application. Exposes HTTP endpoints and the WebSocket feed. Manages 
 | `gateway/routes/halt.py` | `POST /api/halt` — kill switch; calls `ModeController.halt()` (forces OBSERVE, emits `risk.halt`), which flushes the executor's pending queue with audited `decision.expired` events |
 | `gateway/routes/events.py` | `GET /api/events/recent` — recent events from the audit log for UI panel rehydration |
 | `gateway/routes/calibration.py` | `GET /api/calibration` (ECE + reliability), `GET /api/calibration/gates` (Appendix B readiness) |
+| `gateway/routes/analytics.py` | `GET /api/analytics` — equity curve + Sharpe/Sortino/volatility/VaR + equity-curve drawdown (on-demand projection; Sharpe is informational, not a gate criterion — ADR-011) |
 | `gateway/routes/watchlist.py` | `GET /api/watchlist`, `POST /api/watchlist` (add instrument), `DELETE /api/watchlist/{instrument}` (remove) |
+| `gateway/routes/discovery.py` | `GET /api/discovery` (ranked candidate feed — on-demand projection), `GET /api/discovery/{instrument}/analysis` (lazy AI analyst pass) |
 | `gateway/settings.py` | `HOST`, `PORT`, `CORS_ORIGINS` env config |
 
 ### `frontend/`
@@ -155,18 +179,22 @@ React terminal UI built with Vite, TypeScript, Tailwind CSS v4, and shadcn/ui (n
 | `hooks/useDecisions.ts` | Decision rows keyed by id; status updated by `decision.approved`/`decision.rejected`; watchlist-filtered with same add/remove sync |
 | `hooks/usePortfolio.ts` | Portfolio snapshot from `/api/portfolio` + `portfolio.position_updated` events |
 | `hooks/useCalibration.ts` | Calibration + gate reports from `/api/calibration*`, refetched (debounced) on `decision.resolved` / `risk.limit_breached` |
+| `hooks/useAnalytics.ts` | Equity curve + risk/return metrics from `/api/analytics`, fetched on mount and refetched (debounced) on `order.filled` |
 | `hooks/useWatchlist.ts` | REST snapshot on mount + live updates from `watchlist.*` WS events; exposes `add`/`remove` mutations |
+| `hooks/useDiscovery.ts` | Pull-first: fetches `/api/discovery` on mount + manual refresh (no event stream in the 6B.1 MVP); per-candidate AI analysis fetched lazily on demand |
 | `components/panels/MarketWatch.tsx` | Live tick table with bullish/bearish price colouring |
 | `components/panels/SignalFeed.tsx` | Scrollable signal list; PRICE/NEWS badges; relative-age labels |
 | `components/panels/ThesisFeed.tsx` | Thesis cards; LONG/SHORT/NEUTRAL + ACTIVE/EXPIRED/INVALIDATED badges; invalidation conditions |
 | `components/panels/DecisionQueue.tsx` | Decision cards with risk verdict; EXECUTE/REJECT buttons in Assisted mode |
 | `components/panels/PortfolioPanel.tsx` | Cash, positions, unrealized P&L |
 | `components/panels/CalibrationPanel.tsx` | Headline ECE, reliability bars (hit rate vs stated confidence), Appendix B gate readiness |
+| `components/panels/AnalyticsPanel.tsx` | Equity curve + risk/return metrics (Sharpe/Sortino/volatility/VaR, drawdown, net P&L) — the economic gate's read-side view |
 | `components/panels/WatchlistPanel.tsx` | Add/remove instruments at runtime; crypto/equity market selector; filter-as-you-type search (shown when >3 entries); per-instrument live feed-status dot (green = receiving ticks, dim = waiting) |
+| `components/panels/DiscoveryFeed.tsx` | Ranked discovery candidates: score bar + factor chips, expandable evidence (signed contributions), one-click add-to-watchlist, and a lazy "Analyze with AI" pass (thesis + counter-signals) |
 | `components/layout/PanelShell.tsx` | Reusable terminal panel (header bar + content slot) |
 | `types/core.ts` | TypeScript mirror of `core/schemas/*.py` |
 
-The header bar carries the OBSERVE/PAPER/ASSISTED mode switch (`/api/mode`) and the HALT kill switch (`/api/halt`).
+The panels are grouped into three workflow **workspaces** switched from the header (and, on mobile, a workspace-scoped bottom tab bar): **Discover** (the pre-watchlist funnel — candidate feed + watchlist curation), **Terminal** (the live pipeline — markets/signals/theses/decisions), and **Review** (outcomes — portfolio/calibration/analytics). The header bar carries the OBSERVE/PAPER/ASSISTED mode switch (`/api/mode`) and the HALT kill switch (`/api/halt`).
 
 ---
 
@@ -428,7 +456,7 @@ Only **source topics** are replayed (`market.tick`, `signal.created`). Derived e
 
 | Subsystem | Phase | Notes |
 |---|---|---|
-| `discovery/` (Discovery Engine) | 6B | Multi-source opportunity surfacing (ADR-012). `SignalExtractors → EntityResolver → ConvictionAccumulator → DiscoveryEngine`; confluence scoring (noisy-OR over 6A factor tags, per-source decay) computed **pull-first** as an on-demand projection over the persisted `signal.created` events (reuses the ADR-011 equity-curve pattern), served at `/api/discovery`, + AIAnalyst LLM pass; control plane = discovery cap + TTL/confirm + liquidity floor. 6B.1 disclosure-driven (equity), 6B.2 breadth scanner (crypto). Reuses `signal.created`, `WatchlistManager.add`, the LLM layer |
+| Discovery breadth scanner + control plane (6B.2) | 6B.2 | Extends the **shipped** 6B.1 discovery (`discovery/`, ADR-012 — see the `discovery/` section above) with a broad-universe scanner (Alpaca screener / CoinGecko volume / Kraken listings) feeding the same projection → unlocks **crypto-primary**; plus the control plane: auto-add with a `source="discovery"` cap + TTL/cooldown, and a liquidity admission floor + ADV-% size cap in the risk engine (which is liquidity-blind today) |
 | `BrokerAdapter` + live venues | 7A–7B | Venue-neutral ABC parallel to `PaperExecutor`, sharing the `Order`/`client_order_id` contract. **Alpaca** primary (paper→live parity, equities + crypto) in 7A; **Kraken** live crypto in 7B (ADR-009). Assisted mode only, micro sizes. Staged plan: `docs/phase-6-plan.md` (filename retained; read one phase higher) |
 | Capital ramp & live semi-auto | 7C–7D | Stepwise size increases gated on clean reconciliation (7C); bounded autonomous execution on the Appendix B Assisted→Semi-auto gate (7D) |
 | Scale & autonomy | 8 | Full equities adapter, supervised-auto mode, correlation risk, Strategy Lab; Postgres migration path via `EventStore` / `WatchlistStore` protocol swap |

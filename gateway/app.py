@@ -36,6 +36,7 @@ from core.db import migrate, open_db
 from core.logging import configure_logging
 from core.mode import ModeController
 from core.schemas.events import AutonomyMode, EventEnvelope, EventType
+from discovery import DiscoverySettings
 from ingestion.alerts import PriceAlertGenerator
 from ingestion.congress import CongressFeed
 from ingestion.equity import EquityFeed
@@ -58,6 +59,7 @@ from .routes import (
     analytics_router,
     calibration_router,
     decisions_router,
+    discovery_router,
     events_router,
     halt_router,
     mode_router,
@@ -302,6 +304,8 @@ async def default_lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
     app.state.calibration_engine = calibration_engine
     app.state.gate_tracker = gate_tracker
     app.state.watchlist_manager = watchlist_manager
+    app.state.discovery_settings = DiscoverySettings()
+    app.state.llm_provider = provider
 
     logger.info("gateway.ready")
     yield  # ← app serves requests here
@@ -375,6 +379,7 @@ def create_app(lifespan: Any = default_lifespan) -> FastAPI:
     app.include_router(calibration_router)
     app.include_router(watchlist_router)
     app.include_router(analytics_router)
+    app.include_router(discovery_router)
     return app
 
 
