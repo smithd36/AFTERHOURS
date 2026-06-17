@@ -24,13 +24,13 @@
 - **Enrich-only.** Alt-data drives theses only for instruments already on the watchlist (the risk
   engine needs a live price to size a stop).
   → *Impact:* a disclosure on an unwatched name is ingested and persisted but never traded.
-  → *Upgrade:* Phase 6B auto-discovery (auto-add to watchlist behind caps + liquidity-aware sizing).
+  → *Upgrade:* Phase 6B Discovery Engine (ADR-012) — fuses this disclosure with other sources by confluence, then auto-adds behind caps + a liquidity floor.
 
 - **No discovery UI surface yet.** Insider and congress feeds emit market-wide, but the terminal's
   SignalFeed is watchlist-filtered, so unwatched-ticker alt-data is stored but not shown.
   → *Impact:* the "one-click add from an unwatched disclosure" flow described in ADR-010 isn't
   visible.
-  → *Upgrade:* a discovery panel reading the persisted unwatched signals (pairs with Phase 6B).
+  → *Upgrade:* the Phase 6B Discovery panel — a ranked, AI-explained candidate feed over the persisted unwatched signals (ADR-012).
 
 - **Only the `summary` reaches the LLM.** The thesis prompt renders `payload.summary`; structured
   fields (`direction`, `factor`, amounts) are not separately surfaced.

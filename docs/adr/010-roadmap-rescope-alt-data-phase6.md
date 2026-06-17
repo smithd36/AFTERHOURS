@@ -1,8 +1,13 @@
 # ADR-010: Roadmap Re-scope — Alternative-Data Ingestion Inserted as Phase 6; Live Trading Shifts to Phase 7
 
-**Status:** Accepted
+**Status:** Accepted (Phase 6B scope expanded by [ADR-012](012-discovery-engine-phase6b.md))
 **Date:** 2026-06-13
 **Deciders:** Operator, Lead Architect
+
+> **Note (2026-06-16):** the Phase 6B "auto-discovery" placeholder below is superseded by
+> **ADR-012**, which expands it into a multi-source Discovery Engine (confluence scoring across all
+> available sources, equity-primary + crypto-secondary, AI analyst layer). The renumber decided here
+> (live trading → Phase 7) is unchanged.
 
 ---
 

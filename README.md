@@ -8,7 +8,7 @@ A modular monolith that connects live market data, LLM-generated trade theses, a
 
 ## Status
 
-**Phase 6A complete (2026-06-15); Phase 6B (auto-discovery) next; live trading is Phase 7 (staged 7A–7D), per [ADR-010](docs/adr/010-roadmap-rescope-alt-data-phase6.md).** 6A shipped three free alt-data feeds live — insider (SEC Form 4), government-exposure (lobbying + contracts), and supply-chain (10-K) — all enrich-only into the existing pipeline; congress is built but dormant (no free token) and dark-pool/options is deferred (paid). See [`docs/phase-6a-limitations.md`](docs/phase-6a-limitations.md). Full decision pipeline live end-to-end, with user-managed watchlist, dynamic feed routing across crypto and equity, watchlist-scoped pipeline filtering, and tick retention:
+**Phase 6A complete (2026-06-15); Phase 6B (discovery engine — multi-source opportunity surfacing) designed in [ADR-012](docs/adr/012-discovery-engine-phase6b.md), next; live trading is Phase 7 (staged 7A–7D), per [ADR-010](docs/adr/010-roadmap-rescope-alt-data-phase6.md).** 6A shipped three free alt-data feeds live — insider (SEC Form 4), government-exposure (lobbying + contracts), and supply-chain (10-K) — all enrich-only into the existing pipeline; congress is built but dormant (no free token) and dark-pool/options is deferred (paid). See [`docs/phase-6a-limitations.md`](docs/phase-6a-limitations.md). Full decision pipeline live end-to-end, with user-managed watchlist, dynamic feed routing across crypto and equity, watchlist-scoped pipeline filtering, and tick retention:
 
 ```
 Kraken WebSocket ─┐
@@ -41,21 +41,7 @@ Retry-After-aware backoff, so free-tier per-minute limits don't drop theses/deci
 `LLM_MAX_RPM` / `LLM_MAX_CONCURRENCY` (see [`docs/development.md`](docs/development.md) → LLM Providers — Rate Limiting & Resilience).
 Backtest CLI: `python -m backtest [--from DATE] [--to DATE] [--llm replay|live]`.
 
-**Pre-Phase-6 hardening (blockers cleared, 2026-06-12):** the paper system has been hardened to
-live-trading standards before any real order — a single `ModeController` owns the autonomy mode,
-the kill switch expires pending decisions, the portfolio and decision store rehydrate from the
-event log on restart, ledger accounting is corrected (entry-fee P&L, short equity, daily-loss
-rollover, affordability), decision→order→fill carries a deterministic client order ID, prices
-quantize magnitude-aware (sub-cent safe), and LLM output is schema-validated before publish. All
-7 CRITICAL phase-6-blocker issues and the IMPORTANT correctness/durability issues are closed; the
-one remaining entry gate for Phase 7A (live trading) is a single-operator local gateway bar — bind `127.0.0.1`
-(today's `0.0.0.0` default exposes the kill switch to the whole LAN) plus a shared-secret token on
-state-changing routes and the WS (full "auth like a bank" deferred to Phase 8+) — plus a few
-non-blocking hygiene cleanups. Tracked in [`docs/pre-phase-6-issues.md`](docs/pre-phase-6-issues.md)
-(review: `docs/pre-phase6-review.md`).
-
 ---
-
 ## Quick Start
 
 ### Prerequisites
@@ -239,7 +225,7 @@ See [`PLANNING.md`](PLANNING.md) for the full non-negotiables list.
 | **4** ✅ | Backtest + Calibration | Backtesting engine (event-time replay, no look-ahead), decision outcome resolution, ECE calibration reporting, autonomy gate tracking |
 | **5** ✅ | Watchlist & Multi-Instrument | User-managed watchlist, dynamic feed routing (crypto + equity stub), watchlist-scoped pipeline, tick retention, WatchlistPanel |
 | **6A** ✅ | Alt-data signal feeds (enrich-only) | Live: insider (Form 4) / lobbying+contracts (gov-exposure) / supply-chain pollers → `signal.created`; materiality filters, disclosure-date `event_time`, thesis-seed trigger; trades watched equities only. Congress built but dormant; options-flow deferred (paid) |
-| **6B** | Auto-discovery | High-conviction alt-data auto-adds unwatched names to the watchlist behind caps + liquidity-aware sizing |
+| **6B** | Discovery engine | Multi-source confluence (alt-data + news + market breadth) fused into a ranked, AI-explained candidate feed; equity-primary, crypto-secondary; promotion behind caps + liquidity floor (ADR-012). 6B.1 disclosure-driven, 6B.2 breadth scanner |
 | **7A** | Micro-capital validation | `BrokerAdapter` + Alpaca (paper→live), Assisted-only real orders at $250–500, reconciliation, order state machine, in-flight recovery |
 | **7B** | Execution realism + 2nd venue | Kraken live crypto, venue routing, friction model recalibrated from live fills, per-venue reconciliation |
 | **7C** | Graduated capital ramp | Stepwise size increases gated on clean reconciliation, live limits re-tuned, operational runbook |
@@ -247,7 +233,7 @@ See [`PLANNING.md`](PLANNING.md) for the full non-negotiables list.
 | **8** | Scale + Autonomy | Full equities adapter, supervised-auto mode, correlation risk, Strategy Lab, Postgres migration path |
 | **9** | Harden + Extend | Performance, service extraction, advanced observability, disaster recovery |
 
-Phase 6 (alt-data) rationale and design: [`docs/adr/010-roadmap-rescope-alt-data-phase6.md`](docs/adr/010-roadmap-rescope-alt-data-phase6.md). Phase 7 (live trading) breakdown with entry gates and exit checklists: [`docs/phase-6-plan.md`](docs/phase-6-plan.md) (filename retained; renumbered per ADR-010). Execution venue decision: [`docs/adr/009-live-execution-venue.md`](docs/adr/009-live-execution-venue.md).
+Phase 6 (alt-data) rationale and design: [`docs/adr/010-roadmap-rescope-alt-data-phase6.md`](docs/adr/010-roadmap-rescope-alt-data-phase6.md); Phase 6B discovery-engine design: [`docs/adr/012-discovery-engine-phase6b.md`](docs/adr/012-discovery-engine-phase6b.md). Phase 7 (live trading) breakdown with entry gates and exit checklists: [`docs/phase-6-plan.md`](docs/phase-6-plan.md) (filename retained; renumbered per ADR-010). Execution venue decision: [`docs/adr/009-live-execution-venue.md`](docs/adr/009-live-execution-venue.md).
 
 ---
 

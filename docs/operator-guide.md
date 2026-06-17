@@ -9,10 +9,12 @@ It is deliberately text-first. The UI is still moving; screenshots would be
 stale within a phase. They'll be added once the terminal layout freezes ahead
 of live trading (Phase 6).
 
-> **Scope:** Phases 0–5 are complete; pre-Phase-6 hardening's live-trading blockers are cleared
-> (all CRITICAL issues closed). Phase 6 (live trading) is next and is **staged 6A–6D**, starting
-> with **6A micro-capital validation** (Assisted-only real orders at $250–500 via Alpaca, gated on
-> gateway auth/bind hardening) — see `docs/phase-6-plan.md`. The only modes you
+> **Scope:** Phases 0–5 complete; Phase 6A (alt-data feeds) live; Phase 6B (the Discovery Engine,
+> ADR-012) is designed but not started. The live-trading hardening blockers are cleared (all
+> CRITICAL issues closed). Live trading is now **Phase 7, staged 7A–7D** (renumbered per ADR-010),
+> starting with **7A micro-capital validation** (Assisted-only real orders at $250–500 via Alpaca,
+> gated on gateway auth/bind hardening) — see `docs/phase-6-plan.md` (filename retained; read one
+> phase higher). The only modes you
 > can run right now are **Observe**, **Paper**, and **Assisted**, and all fills
 > are simulated. There is **no live trading yet** — no real order ever reaches a
 > venue. Semi-auto, Supervised, and the live execution adapter are Phase 6 and
@@ -260,12 +262,12 @@ So you don't go looking for them:
 
 - **Live trading.** No real orders yet. All fills are simulated. API keys are
   read-only / withdrawal-disabled and Phases 0–5 use only public endpoints.
-  Live execution arrives in **Phase 6A** (Assisted-only, micro-capital, via
-  Alpaca — paper→live parity, then Kraken in 6B; ADR-009). The first real order is
+  Live execution arrives in **Phase 7A** (Assisted-only, micro-capital, via
+  Alpaca — paper→live parity, then Kraken in 7B; ADR-009). The first real order is
   gated on the gateway being authenticated and bound to localhost.
 - **Semi-auto and Supervised modes.** Defined in the model but not operable from
-  the terminal. Semi-auto becomes operable in **Phase 6D** (bounded autonomous
-  execution); Supervised is Phase 7. Both are meaningful only once live execution
+  the terminal. Semi-auto becomes operable in **Phase 7D** (bounded autonomous
+  execution); Supervised is Phase 8. Both are meaningful only once live execution
   exists and has proven correct.
 
 Outcome resolution, calibration reporting, and the backtest harness itself are all

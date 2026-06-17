@@ -45,7 +45,7 @@ Market data feeds and signal generators. Feeds run as long-lived async tasks; si
 | `ingestion/equity/settings.py` | `EQUITY_FEED_PROVIDER`, `EQUITY_FEED_API_KEY`, `EQUITY_FEED_API_SECRET`, `EQUITY_POLL_INTERVAL_SECONDS` |
 | `ingestion/router.py` | `FeedRouter` — subscribes to `watchlist.instrument_added/removed`; routes each instrument to `KrakenFeed` (crypto) or `EquityFeed` (equity); bootstraps by subscribing all currently active instruments on startup |
 | `ingestion/pruner.py` | `TickPruner` — background task; deletes `market.tick` events older than `TICK_RETENTION_DAYS` every `TICK_PRUNE_INTERVAL_HOURS`; keeps SQLite growth bounded for large watchlists |
-| `ingestion/coinbase/feed.py` | **Secondary data feed only.** Coinbase Advanced Trade WebSocket (requires JWT auth — deferred to Phase 6). Not an execution venue: live execution is Alpaca + Kraken (ADR-009). |
+| `ingestion/coinbase/feed.py` | **Secondary data feed only.** Coinbase Advanced Trade WebSocket (requires JWT auth — deferred to Phase 7). Not an execution venue: live execution is Alpaca + Kraken (ADR-009). |
 | `ingestion/coinbase/normalizer.py` | Raw Coinbase messages → `EventEnvelope(MARKET_TICK)` |
 | `ingestion/coinbase/settings.py` | `COINBASE_WS_URL`, `COINBASE_PRODUCTS`, `COINBASE_API_KEY` env config |
 | `ingestion/alerts/generator.py` | Subscribes to `market.tick`; emits `signal.created` for 24h crosses and short-window % moves; watchlist-gated |
@@ -53,7 +53,7 @@ Market data feeds and signal generators. Feeds run as long-lived async tasks; si
 | `ingestion/news/feed.py` | Polls RSS feeds (CoinDesk, CoinTelegraph) every 5 min; watchlist-filtered (skips instruments not in active watchlist; general market news passes through when watchlist is non-empty; all suppressed when watchlist is empty) |
 | `ingestion/news/normalizer.py` | RSS entry → `EventEnvelope(SIGNAL_CREATED)`. Instrument extraction: prose-name map (all crypto + curated high-profile equity brands) plus live-watchlist equity tickers matched as `$cashtags` / all-caps tokens (case-sensitive, so lowercase prose never tags a ticker) |
 | `ingestion/news/settings.py` | `NEWS_FEED_URLS`, `NEWS_POLL_INTERVAL_SECONDS` env config |
-| `ingestion/insider/` | **Alt-data (Phase 6A).** SEC EDGAR Form 4 insider transactions → `signal.created` (`insider_tx`). Free, ≤2-day disclosure; disclosure-date `event_time` (two-clock). The primary 6B discovery substrate |
+| `ingestion/insider/` | **Alt-data (Phase 6A).** SEC EDGAR Form 4 insider transactions → `signal.created` (`insider_tx`). Free, ≤2-day disclosure; disclosure-date `event_time` (two-clock). A core 6B discovery substrate (ADR-012): one of several disclosure sources the Discovery Engine fuses by confluence |
 | `ingestion/govexposure/` | **Alt-data (Phase 6A).** Senate LDA lobbying + USASpending federal contracts, bundled as one government-exposure feed → `signal.created` (`lobbying`, `gov_contract`) |
 | `ingestion/supplychain/` | **Alt-data (Phase 6A).** 10-K customer-concentration ("Customer X = N% of revenue") dependency disclosures → `signal.created` (`supply_chain`) |
 | `ingestion/congress/` | **Alt-data (Phase 6A — built but dormant).** Quiver STOCK Act / congressional disclosures (`congressional_tx`); inert without a free Quiver token. See `docs/phase-6a-limitations.md` |
@@ -428,7 +428,8 @@ Only **source topics** are replayed (`market.tick`, `signal.created`). Derived e
 
 | Subsystem | Phase | Notes |
 |---|---|---|
-| `BrokerAdapter` + live venues | 6A–6B | Venue-neutral ABC parallel to `PaperExecutor`, sharing the `Order`/`client_order_id` contract. **Alpaca** primary (paper→live parity, equities + crypto) in 6A; **Kraken** live crypto in 6B (ADR-009). Assisted mode only, micro sizes. Staged plan: `docs/phase-6-plan.md` |
-| Capital ramp & live semi-auto | 6C–6D | Stepwise size increases gated on clean reconciliation (6C); bounded autonomous execution on the Appendix B Assisted→Semi-auto gate (6D) |
-| Scale & autonomy | 7 | Full equities adapter, supervised-auto mode, correlation risk, Strategy Lab; Postgres migration path via `EventStore` / `WatchlistStore` protocol swap |
-| Harden & extend | 8 | Performance, service extraction, advanced observability, disaster recovery |
+| `discovery/` (Discovery Engine) | 6B | Multi-source opportunity surfacing (ADR-012). `SignalExtractors → EntityResolver → ConvictionAccumulator → DiscoveryEngine`; confluence scoring (noisy-OR over 6A factor tags, per-source decay) computed **pull-first** as an on-demand projection over the persisted `signal.created` events (reuses the ADR-011 equity-curve pattern), served at `/api/discovery`, + AIAnalyst LLM pass; control plane = discovery cap + TTL/confirm + liquidity floor. 6B.1 disclosure-driven (equity), 6B.2 breadth scanner (crypto). Reuses `signal.created`, `WatchlistManager.add`, the LLM layer |
+| `BrokerAdapter` + live venues | 7A–7B | Venue-neutral ABC parallel to `PaperExecutor`, sharing the `Order`/`client_order_id` contract. **Alpaca** primary (paper→live parity, equities + crypto) in 7A; **Kraken** live crypto in 7B (ADR-009). Assisted mode only, micro sizes. Staged plan: `docs/phase-6-plan.md` (filename retained; read one phase higher) |
+| Capital ramp & live semi-auto | 7C–7D | Stepwise size increases gated on clean reconciliation (7C); bounded autonomous execution on the Appendix B Assisted→Semi-auto gate (7D) |
+| Scale & autonomy | 8 | Full equities adapter, supervised-auto mode, correlation risk, Strategy Lab; Postgres migration path via `EventStore` / `WatchlistStore` protocol swap |
+| Harden & extend | 9 | Performance, service extraction, advanced observability, disaster recovery |

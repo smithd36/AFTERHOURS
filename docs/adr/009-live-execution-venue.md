@@ -5,6 +5,10 @@
 **Deciders:** Operator, Lead Architect
 **Supersedes:** the "Coinbase Advanced Trade is the standing candidate" execution-venue note in ADR-007 (and PLANNING §12 decision #2). Market-data sourcing is unchanged: Kraken primary, Coinbase secondary.
 
+> **Numbering note (post–ADR-010):** this ADR predates the roadmap re-scope. Its "Phase 6A/6B"
+> refer to the **live-trading** sub-phases, now **7A/7B**. Under the current scheme "6B" is the
+> Discovery Engine (ADR-012). Read live-execution phase numbers here one higher.
+
 ---
 
 ## Context

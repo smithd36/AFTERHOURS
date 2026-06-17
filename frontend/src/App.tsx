@@ -14,6 +14,7 @@ import {
   LineChart,
   ListChecks,
   Radio,
+  Telescope,
   Wallet,
   type LucideIcon,
 } from "lucide-react";
@@ -21,11 +22,13 @@ import { cn } from "@/lib/utils";
 import { AnalyticsPanel } from "@/components/panels/AnalyticsPanel";
 import { CalibrationPanel } from "@/components/panels/CalibrationPanel";
 import { DecisionQueue } from "@/components/panels/DecisionQueue";
+import { DiscoveryFeed } from "@/components/panels/DiscoveryFeed";
 import { FeedHealthBar } from "@/components/panels/FeedHealthBar";
 import { MarketWatch } from "@/components/panels/MarketWatch";
 import { PortfolioPanel } from "@/components/panels/PortfolioPanel";
 import { SignalFeed } from "@/components/panels/SignalFeed";
 import { ThesisFeed } from "@/components/panels/ThesisFeed";
+import { WatchlistPanel } from "@/components/panels/WatchlistPanel";
 import { WatchlistDrawer } from "@/components/layout/WatchlistDrawer";
 import { useAnalytics } from "@/hooks/useAnalytics";
 import { useBackfill } from "@/hooks/useBackfill";
@@ -66,7 +69,18 @@ function useMediaQuery(query: string): boolean {
   return matches;
 }
 
-type TabId = "markets" | "signals" | "theses" | "decisions" | "book" | "calib" | "perf";
+type Workspace = "discover" | "terminal" | "review";
+
+type TabId =
+  | "candidates"
+  | "watchlist"
+  | "markets"
+  | "signals"
+  | "theses"
+  | "decisions"
+  | "book"
+  | "calib"
+  | "perf";
 
 interface TabDef {
   id: TabId;
@@ -74,6 +88,27 @@ interface TabDef {
   icon: LucideIcon;
   badge?: number;
 }
+
+// Each workspace owns a slice of the panels. The mobile tab bar is scoped to
+// the active workspace, so it shows ≤4 tabs instead of one flat 7-tab bar.
+// Discover = pre-watchlist funnel, Terminal = live pipeline, Review = outcomes.
+const WORKSPACE_TABS: Record<Workspace, TabId[]> = {
+  discover: ["candidates", "watchlist"],
+  terminal: ["markets", "signals", "theses", "decisions"],
+  review: ["book", "calib", "perf"],
+};
+
+const TAB_META: Record<TabId, { label: string; icon: LucideIcon }> = {
+  candidates: { label: "Candidates", icon: Telescope },
+  watchlist: { label: "Watchlist", icon: ListChecks },
+  markets: { label: "Markets", icon: CandlestickChart },
+  signals: { label: "Signals", icon: Radio },
+  theses: { label: "Theses", icon: Brain },
+  decisions: { label: "Decisions", icon: Gavel },
+  book: { label: "Book", icon: Wallet },
+  calib: { label: "Calib", icon: Gauge },
+  perf: { label: "Perf", icon: LineChart },
+};
 
 const _ET_TIME_FMT = new Intl.DateTimeFormat("en-US", {
   timeZone: "America/New_York",
@@ -198,42 +233,50 @@ function HaltButton({ onHalt, pulsing }: { onHalt: () => void; pulsing?: boolean
   );
 }
 
-type View = "terminal" | "review";
+const WORKSPACES: { id: Workspace; label: string }[] = [
+  { id: "discover", label: "Discover" },
+  { id: "terminal", label: "Terminal" },
+  { id: "review", label: "Review" },
+];
 
-/** Desktop-only: switch between the live Terminal and the Review surface. */
-function ViewSwitcher({
-  view,
+/** Switch between the three workflow workspaces (desktop header + mobile bar). */
+function WorkspaceSwitcher({
+  workspace,
   onChange,
   pending,
+  className,
 }: {
-  view: View;
-  onChange: (v: View) => void;
+  workspace: Workspace;
+  onChange: (w: Workspace) => void;
   pending: number;
+  className?: string;
 }) {
-  const views: { id: View; label: string }[] = [
-    { id: "terminal", label: "Terminal" },
-    { id: "review", label: "Review" },
-  ];
   return (
-    <div className="flex items-center gap-0.5 rounded border border-border p-0.5">
-      {views.map((v) => {
-        // The act-surface lives in Terminal; surface a pending dot there so an
-        // approval raised while in Review still pulls the operator back.
-        const showDot = v.id === "terminal" && pending > 0 && view !== "terminal";
+    <div
+      className={cn(
+        "flex items-center gap-0.5 rounded border border-border p-0.5",
+        className,
+      )}
+    >
+      {WORKSPACES.map((w) => {
+        // The act-surface (Decisions) lives in Terminal; surface a pending dot
+        // there so an approval raised while in Discover/Review still pulls the
+        // operator back.
+        const showDot = w.id === "terminal" && pending > 0 && workspace !== "terminal";
         return (
           <button
-            key={v.id}
-            onClick={() => onChange(v.id)}
-            aria-pressed={view === v.id}
-            aria-label={showDot ? `${v.label}, ${pending} pending approval${pending !== 1 ? "s" : ""}` : undefined}
+            key={w.id}
+            onClick={() => onChange(w.id)}
+            aria-pressed={workspace === w.id}
+            aria-label={showDot ? `${w.label}, ${pending} pending approval${pending !== 1 ? "s" : ""}` : undefined}
             className={cn(
-              "relative rounded px-2.5 py-0.5 text-[11px] font-semibold uppercase tracking-wider transition-colors focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring",
-              view === v.id
+              "relative flex-1 whitespace-nowrap rounded px-2.5 py-0.5 text-[11px] font-semibold uppercase tracking-wider transition-colors focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring pointer-coarse:py-1.5",
+              workspace === w.id
                 ? "bg-secondary text-foreground"
                 : "text-muted-foreground/60 hover:text-muted-foreground",
             )}
           >
-            {v.label}
+            {w.label}
             {showDot && (
               <span
                 aria-hidden="true"
@@ -274,7 +317,8 @@ function MobileTabBar({
   return (
     <nav
       aria-label="Panels"
-      className="grid shrink-0 grid-cols-7 border-t border-border bg-card pb-[env(safe-area-inset-bottom)]"
+      className="grid shrink-0 border-t border-border bg-card pb-[env(safe-area-inset-bottom)]"
+      style={{ gridTemplateColumns: `repeat(${tabs.length}, minmax(0, 1fr))` }}
     >
       {tabs.map((tab) => {
         const Icon = tab.icon;
@@ -453,13 +497,21 @@ export default function App() {
   useBackfill(handleEnvelope);
 
   // ── Responsive shell ──────────────────────────────────────────────────────
-  // Desktop keeps the multi-column grid. Below lg the panels become a single
-  // full-height view switched by a bottom tab bar (see MobileTabBar). One
-  // branch renders at a time, so each panel mounts once.
+  // The panels are grouped into three workflow workspaces (Discover/Terminal/
+  // Review). Desktop renders the active workspace's multi-column layout; below
+  // lg each workspace's panels become a bottom tab bar scoped to that workspace.
+  // One branch renders at a time, so each panel mounts once.
   const isDesktop = useMediaQuery("(min-width: 1024px)");
+  const [workspace, setWorkspace] = useState<Workspace>("terminal");
   const [activeTab, setActiveTab] = useState<TabId>("markets");
-  const [view, setView] = useState<View>("terminal");
   const [watchlistOpen, setWatchlistOpen] = useState(false);
+
+  // Switching workspace resets the mobile sub-tab to that workspace's first
+  // panel (the bottom bar is scoped per workspace).
+  const selectWorkspace = useCallback((w: Workspace) => {
+    setWorkspace(w);
+    setActiveTab(WORKSPACE_TABS[w][0]);
+  }, []);
 
   // Pending approvals mirror DecisionQueue's own filter — drives the tab badge.
   const pendingCount = useMemo(
@@ -484,18 +536,29 @@ export default function App() {
   const portfolio = <PortfolioPanel snapshot={snapshot} decisions={decisions} />;
   const calibration = <CalibrationPanel report={report} gates={gates} />;
   const analyticsPanel = <AnalyticsPanel report={analytics} />;
+  const watchlistPanel = (
+    <WatchlistPanel
+      entries={watchlistEntries}
+      loading={watchlistLoading}
+      ticks={ticks}
+      onAdd={watchlistAdd}
+      onRemove={watchlistRemove}
+    />
+  );
+  const discoveryFeed = <DiscoveryFeed />;
 
-  const tabs: TabDef[] = [
-    { id: "markets", label: "Markets", icon: CandlestickChart },
-    { id: "signals", label: "Signals", icon: Radio },
-    { id: "theses", label: "Theses", icon: Brain },
-    { id: "decisions", label: "Decisions", icon: Gavel, badge: pendingCount },
-    { id: "book", label: "Book", icon: Wallet },
-    { id: "calib", label: "Calib", icon: Gauge },
-    { id: "perf", label: "Perf", icon: LineChart },
-  ];
+  // Mobile bottom-bar tabs for the active workspace; the decisions badge is the
+  // only dynamic bit.
+  const workspaceTabs: TabDef[] = WORKSPACE_TABS[workspace].map((id) => ({
+    id,
+    label: TAB_META[id].label,
+    icon: TAB_META[id].icon,
+    badge: id === "decisions" ? pendingCount : undefined,
+  }));
 
   const mobilePanel: Record<TabId, ReactNode> = {
+    candidates: discoveryFeed,
+    watchlist: watchlistPanel,
     markets: marketWatch,
     signals: signalFeed,
     theses: thesisFeed,
@@ -504,6 +567,13 @@ export default function App() {
     calib: calibration,
     perf: analyticsPanel,
   };
+
+  // DecisionQueue (the act-surface) mounts only in Terminal — on desktop the
+  // whole workspace, on mobile its tab. Everywhere else a shell-level live
+  // region keeps pending approvals audible.
+  const decisionsMounted = isDesktop
+    ? workspace === "terminal"
+    : workspace === "terminal" && activeTab === "decisions";
 
   return (
     <div className="flex h-[100dvh] w-full flex-col bg-background text-foreground pl-[env(safe-area-inset-left)] pr-[env(safe-area-inset-right)]">
@@ -516,7 +586,11 @@ export default function App() {
         </span>
         {isDesktop && (
           <div className="order-1">
-            <ViewSwitcher view={view} onChange={setView} pending={pendingCount} />
+            <WorkspaceSwitcher
+              workspace={workspace}
+              onChange={selectWorkspace}
+              pending={pendingCount}
+            />
           </div>
         )}
         {/* Controls: own full-width row on phones, inline on the right at sm+. */}
@@ -538,8 +612,18 @@ export default function App() {
 
       <FeedHealthBar feeds={feedHealth} />
 
+      {/* DecisionQueue carries its own live region while mounted; this covers
+          pending approvals while the operator is in a workspace/tab without it. */}
+      {!decisionsMounted && (
+        <span className="sr-only" aria-live="assertive" aria-atomic="true">
+          {pendingCount > 0
+            ? `${pendingCount} decision${pendingCount !== 1 ? "s" : ""} pending approval`
+            : ""}
+        </span>
+      )}
+
       {isDesktop ? (
-        view === "terminal" ? (
+        workspace === "terminal" ? (
           // Live operation: the flow scrolls on the left, the Decision Queue is
           // pinned as a rail on the right so the act-surface never scrolls away.
           <main className="flex min-h-0 flex-1 gap-2 overflow-hidden p-3">
@@ -552,37 +636,36 @@ export default function App() {
               {decisionQueue}
             </aside>
           </main>
-        ) : (
-          // Review: portfolio standing + calibration, read between sessions.
-          // DecisionQueue is unmounted here, so its live region is too — this
-          // shell-level one keeps pending approvals audible (the dot on the
-          // Terminal switch is the visual counterpart).
+        ) : workspace === "review" ? (
+          // Review: portfolio standing + calibration + performance, read between
+          // sessions.
           <main className="min-h-0 flex-1 overflow-y-auto p-3">
-            <span className="sr-only" aria-live="assertive" aria-atomic="true">
-              {pendingCount > 0
-                ? `${pendingCount} decision${pendingCount !== 1 ? "s" : ""} pending approval`
-                : ""}
-            </span>
             <div className="mx-auto grid max-w-5xl grid-cols-1 gap-2 xl:grid-cols-2">
               {portfolio}
               {calibration}
               <div className="xl:col-span-2">{analyticsPanel}</div>
             </div>
           </main>
+        ) : (
+          // Discover: the pre-watchlist funnel — candidate feed (Phase 6B) with
+          // the watchlist as the curation rail.
+          <main className="flex min-h-0 flex-1 gap-2 overflow-hidden p-3">
+            <div className="flex min-h-0 flex-1 flex-col overflow-y-auto pr-1">
+              {discoveryFeed}
+            </div>
+            <aside className="flex w-[22rem] shrink-0 flex-col overflow-y-auto xl:w-[26rem]">
+              {watchlistPanel}
+            </aside>
+          </main>
         )
       ) : (
         <>
-          {/* DecisionQueue's own live region only exists while its tab is
-              mounted; this shell-level one covers pending approvals raised
-              while another tab is in view. Gated off on the decisions tab so
-              the two don't announce twice. */}
-          {activeTab !== "decisions" && (
-            <span className="sr-only" aria-live="assertive" aria-atomic="true">
-              {pendingCount > 0
-                ? `${pendingCount} decision${pendingCount !== 1 ? "s" : ""} pending approval`
-                : ""}
-            </span>
-          )}
+          <WorkspaceSwitcher
+            workspace={workspace}
+            onChange={selectWorkspace}
+            pending={pendingCount}
+            className="mx-2 mt-2"
+          />
           {/* key resets scroll position and replays the enter fade per tab. */}
           <main
             key={activeTab}
@@ -590,7 +673,7 @@ export default function App() {
           >
             {mobilePanel[activeTab]}
           </main>
-          <MobileTabBar tabs={tabs} active={activeTab} onChange={setActiveTab} />
+          <MobileTabBar tabs={workspaceTabs} active={activeTab} onChange={setActiveTab} />
         </>
       )}
 
