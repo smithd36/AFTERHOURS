@@ -2,7 +2,7 @@
 
 **Status:** Accepted (Phase 6B scope expanded by [ADR-012](012-discovery-engine-phase6b.md))
 **Date:** 2026-06-13
-**Deciders:** Operator, Lead Architect
+**Deciders:** Operator, @smithd36
 
 > **Note (2026-06-16):** the Phase 6B "auto-discovery" placeholder below is superseded by
 > **ADR-012**, which expands it into a multi-source Discovery Engine (confluence scoring across all

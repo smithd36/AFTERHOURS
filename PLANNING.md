@@ -1,7 +1,7 @@
 # AFTERHOURS — Architecture & Product Planning Document
 
 > **Status:** v0.7 — Phases 0–5 implemented (see README for current state); pre-live-trading hardening largely complete; Phase 6+ pending. **Roadmap re-scoped 2026-06-13 (ADR-010): alternative-data ingestion is inserted as a new Phase 6 — 6A (signal feeds, enrich-only) + 6B (discovery engine, multi-source, ADR-012); live trading and all later phases shift down one — live trading is now Phase 7 (sub-phases 7A–7D), Scale & Autonomy is Phase 8, Harden & Extend is Phase 9.** (Prior re-scope 2026-06-10: Phase 5 is dynamic watchlist + multi-instrument scale; former Phases 5/6/7 became 6/7/8.) The live-trading gating work — kill-switch coverage, single-source-of-truth autonomy mode, portfolio rehydration, ledger-accounting fixes, idempotency keys, LLM output validation — is **done** (all 7 CRITICAL `phase-6-blocker` issues + the IMPORTANT correctness/durability issues closed as of 2026-06-12; these were entry gates for live trading, now Phase 7). The remaining open items are the gateway auth/bind hardening and assorted hygiene cleanups; status is tracked in `docs/pre-phase-6-issues.md`.
-> **Author:** Lead Architect
+> **Author:** smithd36
 > **Date:** 2026-06-09
 > **Audience:** Founder, engineering, future contributors
 

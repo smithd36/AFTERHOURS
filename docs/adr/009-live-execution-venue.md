@@ -2,7 +2,7 @@
 
 **Status:** Accepted
 **Date:** 2026-06-12
-**Deciders:** Operator, Lead Architect
+**Deciders:** Operator, @smithd36
 **Supersedes:** the "Coinbase Advanced Trade is the standing candidate" execution-venue note in ADR-007 (and PLANNING §12 decision #2). Market-data sourcing is unchanged: Kraken primary, Coinbase secondary.
 
 > **Numbering note (post–ADR-010):** this ADR predates the roadmap re-scope. Its "Phase 6A/6B"

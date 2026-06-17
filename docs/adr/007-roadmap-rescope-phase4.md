@@ -2,7 +2,7 @@
 
 **Status:** Accepted
 **Date:** 2026-06-09
-**Deciders:** Operator, Lead Architect
+**Deciders:** Operator, @smithd36
 
 ---
 

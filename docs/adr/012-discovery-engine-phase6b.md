@@ -2,7 +2,7 @@
 
 **Status:** Accepted
 **Date:** 2026-06-16 (amended same day: MVP scoring execution model set to **pull-first** — see *Scoring execution model* and *Sequencing*)
-**Deciders:** Operator, Lead Architect
+**Deciders:** Operator, @smithd36
 
 ---
 

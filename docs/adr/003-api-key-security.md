@@ -2,7 +2,7 @@
 
 **Status:** Accepted — binding, non-negotiable
 **Date:** 2026-06-09
-**Deciders:** Lead Architect
+**Deciders:** @smithd36
 
 ---
 
