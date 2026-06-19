@@ -1,6 +1,7 @@
-import { useMemo, useState } from "react";
+import { Fragment, useMemo, useState } from "react";
 import { cn } from "@/lib/utils";
 import { PanelShell } from "@/components/layout/PanelShell";
+import { TickerLink } from "@/components/TickerLink";
 import type { SignalRow } from "@/hooks/useSignals";
 
 // ---------------------------------------------------------------------------
@@ -82,7 +83,12 @@ function SignalItem({ row }: { row: SignalRow }) {
       <div className="min-w-0 flex-1">
         {row.instruments.length > 0 && (
           <span className="mr-1.5 text-[11px] font-medium text-muted-foreground">
-            {row.instruments.join(" · ")}
+            {row.instruments.map((s, i) => (
+              <Fragment key={s}>
+                {i > 0 && " · "}
+                <TickerLink symbol={s} />
+              </Fragment>
+            ))}
           </span>
         )}
         {row.url ? (

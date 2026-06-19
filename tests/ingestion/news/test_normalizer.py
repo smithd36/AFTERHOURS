@@ -133,7 +133,7 @@ class TestInstrumentExtraction:
         assert "ETH-USD" in env.payload["instruments"]
 
     def test_extracts_equity_brand_name(self, normalizer: NewsNormalizer) -> None:
-        # Name map works without a watchlist (the feed filters off-watchlist).
+        # Name map works without a watchlist; unwatched brands now persist too.
         env = normalizer.normalize(_entry(title="Tesla recalls Cybertrucks", summary=""))
         assert env is not None
         assert "TSLA" in env.payload["instruments"]
@@ -226,3 +226,11 @@ class TestPayload:
         env = normalizer.normalize(_entry(link=link))
         assert env is not None
         assert env.payload["provenance"]["source_id"] == link
+
+    def test_payload_is_discovery_eligible(self, normalizer: NewsNormalizer) -> None:
+        # factor + direction make news a confluence contributor (ADR-012);
+        # without the factor tag the discovery extractor drops it.
+        env = normalizer.normalize(_entry())
+        assert env is not None
+        assert env.payload["payload"]["factor"] == "news"
+        assert env.payload["payload"]["direction"] == "neutral"

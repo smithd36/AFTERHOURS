@@ -84,6 +84,31 @@ class TestFirstPoll:
         assert received[0].payload["provenance"]["source_id"] == "https://example.com/a2"
 
 
+class _FakeWatchlist:
+    """Empty watchlist: nothing is "watched", so the old filter dropped all."""
+
+    @property
+    def active_instruments(self) -> frozenset[str]:
+        return frozenset()
+
+    def get_market(self, instrument: str) -> str:
+        return "crypto"
+
+
+class TestUnwatchedNews:
+    async def test_named_unwatched_news_still_publishes(self, bus: InProcessBus) -> None:
+        # Discovery substrate (ADR-012): BTC/ETH headlines resolve to instruments
+        # the watchlist doesn't hold; they must persist, not be dropped at ingest.
+        received = await _collect(bus)
+        feed = NewsFeed(
+            bus, _settings(), transport=_transport(), watchlist=_FakeWatchlist()  # type: ignore[arg-type]
+        )
+
+        await feed._poll()
+
+        assert len(received) == 2
+
+
 class TestRepeatPoll:
     async def test_second_poll_publishes_nothing_new(self, bus: InProcessBus) -> None:
         received = await _collect(bus)

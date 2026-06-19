@@ -119,6 +119,15 @@ class NewsNormalizer:
                 "title": title,
                 "summary": summary,
                 "source_domain": source_domain,
+                # Discovery-eligible (ADR-012): the `factor` tag makes news a
+                # confluence contributor. News carries no reliable direction
+                # without sentiment NLP, so it enters as damped-neutral context —
+                # it can lift an unwatched name when it coincides with a
+                # directional factor (e.g. an insider buy), never on its own.
+                # ponytail: neutral default; add keyword sentiment only if news
+                # ever needs to vote a direction of its own.
+                "factor": "news",
+                "direction": "neutral",
             },
         )
         return EventEnvelope(

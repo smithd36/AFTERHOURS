@@ -1,6 +1,7 @@
 import { useMemo } from "react";
 import { cn } from "@/lib/utils";
 import { PanelShell } from "@/components/layout/PanelShell";
+import { TickerLink } from "@/components/TickerLink";
 import type { ThesisRow } from "@/hooks/useTheses";
 
 // ---------------------------------------------------------------------------
@@ -63,7 +64,10 @@ function ThesisItem({ row }: { row: ThesisRow }) {
         >
           {row.status}
         </span>
-        <span className="text-[11px] font-medium text-muted-foreground">{row.instrument}</span>
+        <TickerLink
+          symbol={row.instrument}
+          className="text-[11px] font-medium text-muted-foreground"
+        />
         <span className="ml-auto shrink-0 text-[11px] tabular-nums text-muted-foreground">
           {pct}% conf · {ageLabel(row.receivedAt)}
         </span>

@@ -1,6 +1,7 @@
 import { useMemo } from "react";
 import { cn } from "@/lib/utils";
 import { PanelShell } from "@/components/layout/PanelShell";
+import { TickerLink } from "@/components/TickerLink";
 import type { TickRow } from "@/hooks/useMarketTicks";
 
 // ---------------------------------------------------------------------------
@@ -46,7 +47,9 @@ function TickItem({ tick }: { tick: TickRow }) {
 
   return (
     <tr className="border-b border-border/40 transition-colors duration-75 hover:bg-muted/20">
-      <td className="px-3 py-1.5 text-xs font-medium">{tick.instrument}</td>
+      <td className="px-3 py-1.5 text-xs font-medium">
+        <TickerLink symbol={tick.instrument} />
+      </td>
       <td className={cn("px-3 py-1.5 text-right text-xs tabular-nums", colorClass)}>
         {formatPrice(tick.price)}
       </td>

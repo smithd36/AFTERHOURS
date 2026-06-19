@@ -2,6 +2,7 @@ import { useState } from "react";
 import { ChevronDown, Plus, RotateCw, Sparkles, Telescope } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { PanelShell } from "@/components/layout/PanelShell";
+import { TickerLink } from "@/components/TickerLink";
 import {
   useDiscovery,
   type DiscoveryAnalysis,
@@ -115,6 +116,10 @@ function CandidateRow({
   return (
     <div className="border-b border-border/40">
       <div className="flex items-center gap-2 px-3 py-2 hover:bg-muted/20 transition-colors duration-75">
+        <TickerLink
+          symbol={candidate.instrument}
+          className="shrink-0 font-mono text-xs font-semibold text-foreground"
+        />
         <button
           type="button"
           onClick={() => setExpanded((e) => !e)}
@@ -129,9 +134,6 @@ function CandidateRow({
               !expanded && "-rotate-90",
             )}
           />
-          <span className="shrink-0 font-mono text-xs font-semibold text-foreground">
-            {candidate.instrument}
-          </span>
           {/* Score bar */}
           <span className="flex items-center gap-1.5">
             <span className="h-1 w-16 overflow-hidden rounded-full bg-muted">
@@ -207,7 +209,7 @@ function CandidateRow({
                 type="button"
                 onClick={analyze}
                 disabled={analyzing}
-                className="flex items-center gap-1.5 rounded border border-border px-2 py-1 text-[10px] font-semibold uppercase tracking-wider text-muted-foreground transition-colors hover:border-info/60 hover:text-info disabled:opacity-50 focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring"
+                className="flex items-center gap-1.5 rounded border border-border px-2 py-1 text-[10px] font-semibold uppercase tracking-wider text-muted-foreground transition-colors hover:border-info/60 hover:text-info disabled:opacity-50 focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring pointer-coarse:min-h-9 pointer-coarse:px-2"
               >
                 <Sparkles
                   className={cn("h-3 w-3", analyzing && "animate-pulse")}
@@ -255,7 +257,7 @@ export function DiscoveryFeed({ onAdd }: DiscoveryFeedProps) {
         onClick={refresh}
         title="Refresh candidates"
         aria-label="Refresh candidates"
-        className="flex h-5 w-5 items-center justify-center rounded text-muted-foreground transition-colors hover:bg-muted/40 hover:text-foreground focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring"
+        className="flex h-5 w-5 items-center justify-center rounded text-muted-foreground transition-colors hover:bg-muted/40 hover:text-foreground focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring pointer-coarse:h-9 pointer-coarse:w-9"
       >
         <RotateCw className={cn("h-3 w-3", loading && "animate-spin")} aria-hidden="true" />
       </button>

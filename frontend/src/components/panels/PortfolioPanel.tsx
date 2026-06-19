@@ -1,6 +1,7 @@
 import { useMemo, useState } from "react";
 import { cn } from "@/lib/utils";
 import { PanelShell } from "@/components/layout/PanelShell";
+import { TickerLink } from "@/components/TickerLink";
 import type { PortfolioSnapshot, PositionSnapshot, TradeRecord } from "@/hooks/usePortfolio";
 import type { DecisionRow, EvidenceItem } from "@/hooks/useDecisions";
 import type { EventEnvelope } from "@/types/core";
@@ -125,37 +126,39 @@ function PositionCard({
 
   return (
     <div className="rounded-sm bg-muted/60 p-2 text-xs">
-      <button
-        type="button"
-        onClick={toggle}
-        aria-expanded={open}
-        className="w-full text-left focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring rounded-sm"
-      >
-        <div className="flex items-center justify-between">
-          <div className="flex items-center gap-2">
-            <span className="text-muted-foreground">{open ? "▾" : "▸"}</span>
-            <span className="font-mono font-semibold">{instrument}</span>
-            <span
-              className={cn(
-                "inline-block rounded px-1.5 py-0.5 text-[10px] font-bold uppercase tracking-wider",
-                pos.side === "long" ? "bg-bullish/20 text-bullish" : "bg-bearish/20 text-bearish",
-              )}
-            >
-              {pos.side}
-            </span>
-          </div>
-          <PnlValue value={pos.unrealized_pnl} />
-        </div>
-        <div className="mt-1 flex items-center justify-between text-[11px] text-muted-foreground">
-          <span>
-            entry {parseFloat(pos.entry_price).toLocaleString()} →{" "}
-            {parseFloat(pos.current_price).toLocaleString()}
+      <div className="flex items-center justify-between gap-2">
+        <div className="flex min-w-0 items-center gap-2">
+          {/* Chevron toggles detail; the symbol is its own chart link (no nested buttons). */}
+          <button
+            type="button"
+            onClick={toggle}
+            aria-expanded={open}
+            aria-label={`${open ? "Hide" : "Show"} ${instrument} position details`}
+            className="rounded-sm text-muted-foreground transition-colors hover:text-foreground focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring pointer-coarse:px-1"
+          >
+            {open ? "▾" : "▸"}
+          </button>
+          <TickerLink symbol={instrument} className="font-mono font-semibold" />
+          <span
+            className={cn(
+              "inline-block rounded px-1.5 py-0.5 text-[10px] font-bold uppercase tracking-wider",
+              pos.side === "long" ? "bg-bullish/20 text-bullish" : "bg-bearish/20 text-bearish",
+            )}
+          >
+            {pos.side}
           </span>
-          {pos.stop_price && (
-            <span className="text-bearish">stop {parseFloat(pos.stop_price).toLocaleString()}</span>
-          )}
         </div>
-      </button>
+        <PnlValue value={pos.unrealized_pnl} />
+      </div>
+      <div className="mt-1 flex items-center justify-between text-[11px] text-muted-foreground">
+        <span>
+          entry {parseFloat(pos.entry_price).toLocaleString()} →{" "}
+          {parseFloat(pos.current_price).toLocaleString()}
+        </span>
+        {pos.stop_price && (
+          <span className="text-bearish">stop {parseFloat(pos.stop_price).toLocaleString()}</span>
+        )}
+      </div>
 
       {open &&
         (detail ? (
@@ -206,7 +209,7 @@ function TradeRow({ trade }: { trade: TradeRecord }) {
   return (
     <div className="flex items-center gap-1.5 py-0.5 text-[11px] font-mono">
       <span className="w-11 shrink-0 text-muted-foreground">{time}</span>
-      <span className="w-14 shrink-0 font-semibold">{trade.instrument}</span>
+      <TickerLink symbol={trade.instrument} className="w-14 shrink-0 text-left font-semibold" />
 
       {/* Action badge */}
       <span className={cn(

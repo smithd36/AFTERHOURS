@@ -63,7 +63,6 @@ class NewsFeed:
         self._health = FeedHealth(bus, "news")
         self._normalizer = NewsNormalizer(watchlist)
         self._transport = transport  # injectable for tests (httpx.MockTransport)
-        self._watchlist = watchlist
         # Ordered dict used as an ordered set: insertion order = arrival order.
         # Oldest entry is evicted when _SEEN_CAP is reached.
         self._seen: dict[str, None] = dict.fromkeys(initial_seen or ())
@@ -133,15 +132,12 @@ class NewsFeed:
             self._mark_seen(link)
             envelope = self._normalizer.normalize(entry)
             if envelope is not None:
-                # Skip signals whose instruments are all outside the watchlist.
-                # Signals with no instruments (general market news) always pass.
-                if self._watchlist is not None:
-                    active = self._watchlist.active_instruments
-                    if not active:
-                        continue
-                    instruments: list[str] = envelope.payload.get("instruments", [])
-                    if instruments and not any(i in active for i in instruments):
-                        continue
+                # Publish all named/general news unconditionally — named-but-
+                # unwatched headlines are the substrate the discovery engine
+                # (ADR-012) fuses into candidates, so they must persist, not be
+                # dropped at ingest. The watchlist is still used by the
+                # normalizer to match live tickers; the Signal Feed (which
+                # already shows general market news) just shows a little more.
                 await self._bus.publish(envelope)
                 new_count += 1
 

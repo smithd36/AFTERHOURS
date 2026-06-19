@@ -1,6 +1,7 @@
 import { useCallback, useMemo, useRef, useState } from "react";
 import { cn } from "@/lib/utils";
 import { PanelShell } from "@/components/layout/PanelShell";
+import { TickerLink } from "@/components/TickerLink";
 import type { WatchlistEntry } from "@/hooks/useWatchlist";
 
 interface WatchlistPanelProps {
@@ -46,7 +47,9 @@ function EntryRow({
       <td className="w-4 px-3 py-1.5">
         <FeedDot live={live} />
       </td>
-      <td className="py-1.5 pr-2 text-xs font-medium">{entry.instrument}</td>
+      <td className="py-1.5 pr-2 text-xs font-medium">
+        <TickerLink symbol={entry.instrument} />
+      </td>
       <td
         className={cn(
           "py-1.5 text-xs uppercase",

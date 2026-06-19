@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { cn } from "@/lib/utils";
 import { PanelShell } from "@/components/layout/PanelShell";
+import { TickerLink } from "@/components/TickerLink";
 import type { DecisionRow } from "@/hooks/useDecisions";
 
 interface Props {
@@ -103,7 +104,7 @@ function DecisionCard({
     >
       <div className="flex items-center justify-between gap-2">
         <div className="flex items-center gap-2">
-          <span className="font-mono font-semibold">{decision.instrument}</span>
+          <TickerLink symbol={decision.instrument} className="font-mono font-semibold" />
           <SideBadge side={decision.side} />
           <StatusBadge status={decision.status} />
         </div>

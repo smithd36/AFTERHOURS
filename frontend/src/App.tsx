@@ -23,6 +23,8 @@ import { AnalyticsPanel } from "@/components/panels/AnalyticsPanel";
 import { CalibrationPanel } from "@/components/panels/CalibrationPanel";
 import { DecisionQueue } from "@/components/panels/DecisionQueue";
 import { DiscoveryFeed } from "@/components/panels/DiscoveryFeed";
+import { PriceChart } from "@/components/panels/PriceChart";
+import { ChartNavContext, type ChartRequest } from "@/lib/chart-nav";
 import { FeedHealthBar } from "@/components/panels/FeedHealthBar";
 import { MarketWatch } from "@/components/panels/MarketWatch";
 import { PortfolioPanel } from "@/components/panels/PortfolioPanel";
@@ -72,6 +74,7 @@ function useMediaQuery(query: string): boolean {
 type Workspace = "discover" | "terminal" | "review";
 
 type TabId =
+  | "chart"
   | "candidates"
   | "watchlist"
   | "markets"
@@ -93,12 +96,13 @@ interface TabDef {
 // the active workspace, so it shows ≤4 tabs instead of one flat 7-tab bar.
 // Discover = pre-watchlist funnel, Terminal = live pipeline, Review = outcomes.
 const WORKSPACE_TABS: Record<Workspace, TabId[]> = {
-  discover: ["candidates", "watchlist"],
+  discover: ["candidates", "watchlist", "chart"],
   terminal: ["markets", "signals", "theses", "decisions"],
   review: ["book", "calib", "perf"],
 };
 
 const TAB_META: Record<TabId, { label: string; icon: LucideIcon }> = {
+  chart: { label: "Chart", icon: LineChart },
   candidates: { label: "Candidates", icon: Telescope },
   watchlist: { label: "Watchlist", icon: ListChecks },
   markets: { label: "Markets", icon: CandlestickChart },
@@ -513,6 +517,18 @@ export default function App() {
     setActiveTab(WORKSPACE_TABS[w][0]);
   }, []);
 
+  // Clicking any ticker (TickerLink) anywhere opens the Discover price chart for
+  // that symbol: jump to the Discover workspace (Chart tab on mobile) and load it.
+  const [chartRequest, setChartRequest] = useState<ChartRequest | null>(null);
+  const openChart = useCallback((symbol: string) => {
+    const s = symbol.trim().toUpperCase();
+    if (!s) return;
+    setChartRequest({ symbol: s, nonce: Date.now() });
+    setWorkspace("discover");
+    setActiveTab("chart");
+  }, []);
+  const chartNav = useMemo(() => ({ request: chartRequest, openChart }), [chartRequest, openChart]);
+
   // Pending approvals mirror DecisionQueue's own filter — drives the tab badge.
   const pendingCount = useMemo(
     () =>
@@ -546,6 +562,7 @@ export default function App() {
     />
   );
   const discoveryFeed = <DiscoveryFeed onAdd={watchlistAdd} />;
+  const priceChart = <PriceChart />;
 
   // Mobile bottom-bar tabs for the active workspace; the decisions badge is the
   // only dynamic bit.
@@ -557,6 +574,9 @@ export default function App() {
   }));
 
   const mobilePanel: Record<TabId, ReactNode> = {
+    // Mobile chart gets its own full-height instance so it fills the tab;
+    // desktop reuses the compact, natural-height `priceChart` in the column.
+    chart: <PriceChart fill />,
     candidates: discoveryFeed,
     watchlist: watchlistPanel,
     markets: marketWatch,
@@ -576,6 +596,7 @@ export default function App() {
     : workspace === "terminal" && activeTab === "decisions";
 
   return (
+    <ChartNavContext.Provider value={chartNav}>
     <div className="flex h-[100dvh] w-full flex-col bg-background text-foreground pl-[env(safe-area-inset-left)] pr-[env(safe-area-inset-right)]">
       <header
         className="terminal-header flex flex-wrap items-center gap-x-3 gap-y-2 border-b border-border px-3 pb-2 pt-[max(0.5rem,env(safe-area-inset-top))] sm:px-4"
@@ -647,11 +668,14 @@ export default function App() {
             </div>
           </main>
         ) : (
-          // Discover: the pre-watchlist funnel — candidate feed (Phase 6B) with
-          // the watchlist as the curation rail.
+          // Discover: the pre-watchlist funnel — research (chart) over the ranked
+          // candidate feed (Phase 6B), with the watchlist as the curation rail.
+          // The chart holds its natural height at the top; the feed fills the rest
+          // and scrolls internally, so both stay visible without a nested scroll.
           <main className="flex min-h-0 flex-1 gap-2 overflow-hidden p-3">
-            <div className="flex min-h-0 flex-1 flex-col overflow-y-auto pr-1">
-              {discoveryFeed}
+            <div className="flex min-h-0 flex-1 flex-col gap-2">
+              {priceChart}
+              <div className="flex min-h-0 flex-1 flex-col">{discoveryFeed}</div>
             </div>
             <aside className="flex w-[22rem] shrink-0 flex-col overflow-y-auto xl:w-[26rem]">
               {watchlistPanel}
@@ -687,5 +711,6 @@ export default function App() {
         onRemove={watchlistRemove}
       />
     </div>
+    </ChartNavContext.Provider>
   );
 }
