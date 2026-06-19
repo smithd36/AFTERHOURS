@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from "react";
+import { Component, useEffect, useRef, useState, type ReactNode } from "react";
 import {
   CandlestickSeries,
   ColorType,
@@ -22,17 +22,16 @@ function fmtPrice(v: number): string {
   return v >= 100 ? v.toFixed(2) : v.toPrecision(4);
 }
 
-// Resolve a theme CSS var and normalize it to rgb/hex. The tokens are oklch(),
-// which lightweight-charts' color parser can't read — a canvas fillStyle
-// round-trip lets the browser convert oklch → sRGB for us.
-function cssVar(name: string): string {
-  const raw = getComputedStyle(document.documentElement).getPropertyValue(name).trim();
-  const ctx = document.createElement("canvas").getContext("2d");
-  if (!ctx) return raw;
-  ctx.fillStyle = "#000";
-  ctx.fillStyle = raw; // unparseable input leaves the previous value, so no throw
-  return ctx.fillStyle;
-}
+// lightweight-charts can't parse oklch(), and the canvas round-trip we used to
+// convert the theme tokens silently failed on real mobile engines (handing raw
+// oklch back to the chart, which threw and blacked out the app). The terminal is
+// dark-only, so these are just the index.css tokens pre-converted to sRGB hex.
+const CHART_COLORS = {
+  bullish: "#31aa40", // --bullish  oklch(0.65 0.18 145)
+  bearish: "#d40c1a", // --bearish  oklch(0.55 0.22 27)
+  muted: "#808080", //   --muted-foreground oklch(0.60 0 0)
+  border: "#1b1b1b", //  --border   oklch(0.22 0 0)
+} as const;
 
 interface Hover {
   price: number;
@@ -63,10 +62,7 @@ function ChartCanvas({
     const el = elRef.current;
     if (!el) return;
 
-    const bullish = cssVar("--bullish");
-    const bearish = cssVar("--bearish");
-    const muted = cssVar("--muted-foreground");
-    const border = cssVar("--border");
+    const { bullish, bearish, muted, border } = CHART_COLORS;
 
     const chart: IChartApi = createChart(el, {
       autoSize: true,
@@ -137,6 +133,25 @@ function ChartCanvas({
   }, [bars, kind, intraday, onHover]);
 
   return <div ref={elRef} className="h-full w-full" />;
+}
+
+// A thrown error in the chart canvas (e.g. an unparseable color on some engine)
+// must not unmount the whole app. Contain it to the chart area.
+class ChartErrorBoundary extends Component<{ children: ReactNode }, { failed: boolean }> {
+  state = { failed: false };
+  static getDerivedStateFromError(): { failed: boolean } {
+    return { failed: true };
+  }
+  render(): ReactNode {
+    if (this.state.failed) {
+      return (
+        <p className="absolute inset-0 grid place-items-center px-4 text-center text-[11px] text-bearish">
+          chart failed to render
+        </p>
+      );
+    }
+    return this.props.children;
+  }
 }
 
 export function PriceChart({ fill = false }: { fill?: boolean }) {
@@ -275,7 +290,9 @@ export function PriceChart({ fill = false }: { fill?: boolean }) {
               loading bars…
             </p>
           ) : bars.length >= 2 ? (
-            <ChartCanvas bars={bars} kind={kind} intraday={intraday} onHover={setHover} />
+            <ChartErrorBoundary>
+              <ChartCanvas bars={bars} kind={kind} intraday={intraday} onHover={setHover} />
+            </ChartErrorBoundary>
           ) : (
             <p className="absolute inset-0 grid place-items-center px-6 text-center text-[11px] text-muted-foreground">
               Search an equity or crypto symbol to chart its price history.
