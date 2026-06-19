@@ -5,6 +5,7 @@ import {
   CrosshairMode,
   createChart,
   LineSeries,
+  TrackingModeExitMode,
   type IChartApi,
   type Time,
   type UTCTimestamp,
@@ -78,7 +79,19 @@ function ChartCanvas({
       },
       rightPriceScale: { borderColor: border },
       timeScale: { borderColor: border, timeVisible: intraday, secondsVisible: false },
-      crosshair: { mode: CrosshairMode.Normal },
+      // Default crosshair is an off-palette blue-gray; pin it to the theme.
+      crosshair: {
+        mode: CrosshairMode.Normal,
+        vertLine: { color: muted, labelBackgroundColor: border },
+        horzLine: { color: muted, labelBackgroundColor: border },
+      },
+      // Touch: press-and-drag scrubs the crosshair (Robinhood-style) and lifting
+      // dismisses it — the library offsets the marker above the finger so it
+      // isn't occluded. Touch-drag panning is off so the drag scrubs instead of
+      // sliding the axis; every range already fitContent()s, nothing to pan to.
+      // Both settings are touch-only, so desktop mouse behaviour is untouched.
+      trackingMode: { exitMode: TrackingModeExitMode.OnTouchEnd },
+      handleScroll: { horzTouchDrag: false, vertTouchDrag: false },
     });
 
     const up = bars[bars.length - 1].c >= bars[0].c;
@@ -109,6 +122,7 @@ function ChartCanvas({
       const series = chart.addSeries(LineSeries, {
         color: up ? bullish : bearish,
         lineWidth: 2,
+        crosshairMarkerRadius: 5, // bigger dot — easier to track under a fingertip
       });
       series.setData(bars.map((b) => ({ time: b.t as UTCTimestamp, value: b.c })));
       read = (t) => {
@@ -132,7 +146,9 @@ function ChartCanvas({
     return () => chart.remove();
   }, [bars, kind, intraday, onHover]);
 
-  return <div ref={elRef} className="h-full w-full" />;
+  // touch-none (coarse pointers only) keeps the browser from reading the scrub
+  // drag as a page scroll / pull-to-refresh and stealing the touchmove stream.
+  return <div ref={elRef} className="h-full w-full pointer-coarse:touch-none" />;
 }
 
 // A thrown error in the chart canvas (e.g. an unparseable color on some engine)
@@ -255,18 +271,21 @@ export function PriceChart({ fill = false }: { fill?: boolean }) {
             <span className="font-mono text-sm font-semibold text-foreground">
               {data.instrument}
             </span>
-            <span className="font-mono text-sm tabular-nums text-foreground">
+            <span className="font-mono text-base tabular-nums text-foreground sm:text-sm">
               {fmtPrice(shownPrice)}
             </span>
             {changePct !== null && (
               <span
-                className={cn("font-mono text-xs tabular-nums", up ? "text-bullish" : "text-bearish")}
+                className={cn(
+                  "font-mono text-sm tabular-nums sm:text-xs",
+                  up ? "text-bullish" : "text-bearish",
+                )}
               >
                 {up ? "+" : ""}
                 {changePct.toFixed(2)}%
               </span>
             )}
-            <span className="ml-auto font-mono text-[10px] tabular-nums text-muted-foreground/70">
+            <span className="ml-auto font-mono text-[11px] tabular-nums text-muted-foreground/70 sm:text-[10px]">
               {hover
                 ? new Date(hover.time * 1000).toLocaleString(undefined, {
                     month: "short",
