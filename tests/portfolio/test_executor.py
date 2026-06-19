@@ -224,6 +224,122 @@ async def test_thesis_invalidation_no_position_is_noop(
     await executor.stop()
 
 
+async def test_invalidation_without_price_defers_then_closes_on_next_tick(
+    bus: InProcessBus, portfolio: Portfolio
+) -> None:
+    """A thesis death with no current price (e.g. equity after-hours) must not
+    orphan the position: the close is deferred and fills on the next tick."""
+    executor = PaperExecutor(bus, portfolio, initial_mode=AutonomyMode.PAPER)
+    await executor.start()
+
+    # Open, then drop the mark so close_position can't fill (no price).
+    await bus.publish(_tick("AAPL", "200"))
+    await bus.publish(_approved("AAPL", "500"))
+    assert "AAPL" in portfolio.positions
+    portfolio._prices.pop("AAPL")  # simulate a stale book with no live mark
+
+    closes: list[EventEnvelope] = []
+    await bus.subscribe(
+        EventType.ORDER_FILLED,
+        lambda e: closes.append(e) if e.payload["action"] == "close" else None,
+    )
+
+    await bus.publish(_thesis_invalidated("AAPL"))
+    assert "AAPL" in portfolio.positions  # deferred, not dropped
+    assert closes == []
+
+    # Next tick supplies a price → the deferred close fills.
+    await bus.publish(_tick("AAPL", "199"))
+    assert "AAPL" not in portfolio.positions
+    assert len(closes) == 1
+
+    await executor.stop()
+
+
+async def test_reconcile_orphans_closes_dead_thesis_positions(
+    bus: InProcessBus, portfolio: Portfolio
+) -> None:
+    """Startup reconcile flattens a position whose thesis is already dead."""
+    executor = PaperExecutor(bus, portfolio, initial_mode=AutonomyMode.PAPER)
+    await executor.start()
+
+    await bus.publish(_tick("BTC-USD", "50000"))
+    await bus.publish(_approved("BTC-USD", "500"))
+    assert "BTC-USD" in portfolio.positions
+
+    closes: list[EventEnvelope] = []
+    await bus.subscribe(
+        EventType.ORDER_FILLED,
+        lambda e: closes.append(e) if e.payload["action"] == "close" else None,
+    )
+
+    await executor.reconcile_orphans(["BTC-USD"], datetime.now(UTC))
+    assert "BTC-USD" not in portfolio.positions
+    assert len(closes) == 1
+
+    await executor.stop()
+
+
+async def test_rehydrate_pending_reparks_and_is_executable(
+    bus: InProcessBus, portfolio: Portfolio
+) -> None:
+    """A non-terminal approval is re-parked on restart and stays executable."""
+    executor = PaperExecutor(bus, portfolio, initial_mode=AutonomyMode.ASSISTED)
+    now = datetime.now(UTC)
+    env = _approved("BTC-USD", "500", event_time=now)
+    decision_id = env.payload["id"]
+
+    await executor.rehydrate_pending([env], terminal_ids=set(), now=now)
+    assert len(executor.pending_decisions) == 1
+    assert executor.pending_decisions[0]["id"] == decision_id
+
+    await executor.start()
+    await bus.publish(_tick("BTC-USD", "50000"))
+    fills: list[EventEnvelope] = []
+    await bus.subscribe(EventType.ORDER_FILLED, lambda e: fills.append(e))
+    assert await executor.execute(decision_id) is True
+    assert len(fills) == 1
+
+    await executor.stop()
+
+
+async def test_rehydrate_pending_skips_terminal_approvals(
+    bus: InProcessBus, portfolio: Portfolio
+) -> None:
+    """An approval that already filled/rejected/expired is not re-parked."""
+    executor = PaperExecutor(bus, portfolio, initial_mode=AutonomyMode.ASSISTED)
+    now = datetime.now(UTC)
+    env = _approved("BTC-USD", "500", event_time=now)
+    decision_id = env.payload["id"]
+
+    await executor.rehydrate_pending([env], terminal_ids={decision_id}, now=now)
+    assert executor.pending_decisions == []
+
+
+async def test_rehydrate_pending_expires_stale_instead_of_reparking(
+    bus: InProcessBus, portfolio: Portfolio
+) -> None:
+    """An approval already past its TTL is expired (audited), not re-parked."""
+    settings = PortfolioSettings(pending_ttl_seconds=60)
+    executor = PaperExecutor(
+        bus, portfolio, initial_mode=AutonomyMode.ASSISTED, settings=settings
+    )
+    expired: list[EventEnvelope] = []
+    await bus.subscribe(EventType.DECISION_EXPIRED, lambda e: expired.append(e))
+
+    base = datetime(2026, 1, 1, 12, 0, tzinfo=UTC)
+    env = _approved("BTC-USD", "500", event_time=base)
+    decision_id = env.payload["id"]
+
+    await executor.rehydrate_pending(
+        [env], terminal_ids=set(), now=base + timedelta(seconds=61)
+    )
+    assert executor.pending_decisions == []
+    assert len(expired) == 1
+    assert expired[0].payload["decision_id"] == decision_id
+    assert expired[0].payload["reason"] == "ttl_expired_on_restart"
+
+
 async def test_observe_mode_ignores(bus: InProcessBus, portfolio: Portfolio) -> None:
     executor = PaperExecutor(bus, portfolio, initial_mode=AutonomyMode.OBSERVE)
     await executor.start()

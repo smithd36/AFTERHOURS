@@ -26,10 +26,12 @@ if TYPE_CHECKING:
 logger = structlog.get_logger(__name__)
 
 _CHECK_INTERVAL_SECONDS = 60
-# How far back to rehydrate active theses on restart. Active theses are bounded
-# (cooldown per instrument × expiry window), so this comfortably covers them.
-# ponytail: bump if a very large watchlist ever exceeds it.
-_REHYDRATE_LIMIT = 500
+# How far back to rehydrate active theses on restart. Must comfortably exceed
+# the number of thesis events emitted within one max-horizon window, or a
+# long-horizon thesis (e.g. 168h) older than the window never re-arms and so
+# never expires — its position then outlives its thesis. 5000 matches the
+# resolver's tick-replay window in the gateway lifespan.
+_REHYDRATE_LIMIT = 5000
 
 
 class ThesisInvalidator:

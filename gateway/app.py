@@ -22,7 +22,7 @@ from __future__ import annotations
 import asyncio
 from collections.abc import AsyncGenerator
 from contextlib import asynccontextmanager
-from datetime import UTC, datetime
+from datetime import UTC, datetime, timedelta
 from typing import Any
 
 import structlog
@@ -77,6 +77,51 @@ logger = structlog.get_logger(__name__)
 # ---------------------------------------------------------------------------
 
 
+async def _reconcile_orphan_positions(
+    store: SqliteEventStore,
+    portfolio: Portfolio,
+    executor: PaperExecutor,
+    decision_store: dict[str, Any],
+) -> None:
+    """Close open positions whose governing thesis has expired or been invalidated.
+
+    A position should be flat once its thesis dies, but close-on-invalidation is a
+    one-shot event that's lost if it can't fill or fires while we're down. This
+    walks position → decision → thesis from the audit log and hands any dead-thesis
+    instruments to the executor (which closes now, or defers to the first tick)."""
+    created = await store.recent([EventType.THESIS_CREATED.value], limit=5000)
+    invalidated = await store.recent([EventType.THESIS_INVALIDATED.value], limit=5000)
+    invalidated_tids = {
+        str(e.payload.get("thesis_id")) for e in invalidated if e.payload.get("thesis_id")
+    }
+    horizon_by_tid: dict[str, tuple[datetime, int]] = {}
+    for e in created:
+        tid = str(e.payload.get("id", ""))
+        if tid:
+            horizon_by_tid[tid] = (e.event_time, int(e.payload.get("time_horizon_hours", 8)))
+
+    now = datetime.now(UTC)
+    orphans: list[str] = []
+    for instrument, pos in portfolio.positions.items():
+        dec = decision_store.get(pos.decision_id)
+        raw_tid = dec.get("originating_thesis_id") if dec else None
+        pos_tid = str(raw_tid) if raw_tid else None
+        if pos_tid is None or pos_tid in invalidated_tids:
+            # No traceable thesis, or one explicitly invalidated → dead.
+            dead = True
+        elif pos_tid in horizon_by_tid:
+            created_at, horizon = horizon_by_tid[pos_tid]
+            dead = created_at + timedelta(hours=horizon) <= now
+        else:
+            dead = True  # thesis not found in history → long expired
+        if dead:
+            orphans.append(instrument)
+
+    if orphans:
+        logger.warning("gateway.orphan_positions_reconciled", instruments=orphans)
+        await executor.reconcile_orphans(orphans, now)
+
+
 @asynccontextmanager
 async def default_lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
     configure_logging()
@@ -120,6 +165,16 @@ async def default_lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
 
     async def _track_decision(envelope: EventEnvelope) -> None:
         p = envelope.payload
+        if envelope.event_type == EventType.DECISION_EXPIRED.value:
+            # Expired carries only {decision_id, reason} — update the existing
+            # record's status instead of overwriting the full decision with the
+            # stub, so a parked decision that ages out stops reading 'approved'.
+            did = p.get("decision_id")
+            if did and did in decision_store:
+                decision_store[did] = {
+                    **decision_store[did], "status": "expired", "_event_type": envelope.event_type
+                }
+            return
         did = p.get("id")
         if did:
             decision_store[did] = {**p, "_event_type": envelope.event_type}
@@ -128,6 +183,7 @@ async def default_lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
         EventType.DECISION_PROPOSED.value,
         EventType.DECISION_APPROVED.value,
         EventType.DECISION_REJECTED.value,
+        EventType.DECISION_EXPIRED.value,
     ]
     for event_type in decision_event_types:
         await bus.subscribe(event_type, _track_decision)
@@ -147,7 +203,8 @@ async def default_lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
     # Rehydrate the paper book from the full order.filled history before
     # subscribing — otherwise a restart resets cash to initial_cash and drops
     # open positions, corrupting the autonomy gate's P&L evidence window.
-    await portfolio.rehydrate(await store.range([EventType.ORDER_FILLED.value]))
+    filled_events = await store.range([EventType.ORDER_FILLED.value])
+    await portfolio.rehydrate(filled_events)
     # Seed marks from the last persisted tick per instrument so unrealized P&L is
     # correct on restart even when the market is closed and no live tick will come.
     portfolio.seed_prices(await store.latest_per_key([EventType.MARKET_TICK.value], "instrument"))
@@ -161,7 +218,38 @@ async def default_lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
     executor = PaperExecutor(
         bus, portfolio, modes=mode_controller, validator=risk_engine.evaluate
     )
+    # Re-park ASSISTED approvals that never reached a terminal state, so a hard
+    # crash doesn't silently lose the operator's decision queue (graceful
+    # shutdown already drains it via stop()). Terminal = filled (open), rejected,
+    # or already expired. Built from the audit log before subscribing.
+    executed_ids = {
+        f.payload.get("decision_id", "")
+        for f in filled_events
+        if f.payload.get("action") == "open"
+    }
+    rejected_ids = {
+        str(e.payload.get("id", ""))
+        for e in await store.recent([EventType.DECISION_REJECTED.value], limit=2000)
+    }
+    expired_ids = {
+        str(e.payload.get("decision_id", ""))
+        for e in await store.recent([EventType.DECISION_EXPIRED.value], limit=2000)
+    }
+    await executor.rehydrate_pending(
+        await store.recent([EventType.DECISION_APPROVED.value], limit=2000),
+        executed_ids | rejected_ids | expired_ids,
+        datetime.now(UTC),
+    )
     await executor.start()
+
+    # Restart reconciliation: a position must not outlive its thesis. The
+    # close-on-invalidation event is best-effort (lost if it fired with no
+    # price, before the executor subscribed, or while the process was down), so
+    # re-enforce the invariant here from the audit log. Thesis liveness is read
+    # straight from thesis.created/.invalidated history — independent of the
+    # invalidator's rehydrate window — so a long-horizon thesis isn't misjudged.
+    if portfolio.positions:
+        await _reconcile_orphan_positions(store, portfolio, executor, decision_store)
 
     decision_generator = DecisionGenerator(bus, provider, watchlist=watchlist_manager)
     await decision_generator.start()

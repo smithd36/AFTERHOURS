@@ -92,6 +92,14 @@ class PaperExecutor:
         # and is rejected here rather than producing a duplicate fill.
         self._submitted_orders: set[str] = set()
 
+        # Instruments whose thesis is dead but whose close couldn't fill yet
+        # because no price was available (equity after-hours, or before the
+        # first tick on restart). close-on-invalidation is otherwise a one-shot
+        # event: if that single attempt no-ops, the position is orphaned forever
+        # (the thesis never re-invalidates). We retry these on the next tick so a
+        # missing price defers the close instead of dropping it.
+        self._close_pending: set[str] = set()
+
     async def start(self) -> None:
         self._approved_sub = await self._bus.subscribe(
             EventType.DECISION_APPROVED, self._handle_approved
@@ -283,6 +291,34 @@ class PaperExecutor:
                     fill_price=str(fill_price))
         return True
 
+    async def rehydrate_pending(
+        self, approvals: list[EventEnvelope], terminal_ids: set[str], now: datetime
+    ) -> None:
+        """Re-park ASSISTED approvals that never reached a terminal state.
+
+        Graceful shutdown expires the queue via ``stop()``, but a hard crash
+        leaves approved-but-unexecuted decisions out of ``_pending`` — the
+        operator's queue silently vanishes on restart and the decisions sit
+        ``approved`` forever. Replays ``decision.approved`` from the audit log,
+        skips any already filled/rejected/expired (``terminal_ids``), and
+        re-parks the rest so ``/api/decisions/pending`` survives a restart.
+        Approvals already past their TTL are expired (audited) instead of
+        re-parked, matching the live sweep. Call before :meth:`start`."""
+        reparked = 0
+        expired = 0
+        for env in approvals:
+            did = str(env.payload.get("id", ""))
+            if not did or did in terminal_ids or did in self._pending:
+                continue
+            parked = _ParkedDecision(approved_at=env.event_time, payload=env.payload)
+            if self._is_expired(parked, now):
+                await self._emit_expired(did, "ttl_expired_on_restart", now)
+                expired += 1
+            else:
+                self._pending[did] = parked
+                reparked += 1
+        logger.info("paper_executor.pending_rehydrated", reparked=reparked, expired=expired)
+
     @property
     def pending_decisions(self) -> list[dict[str, Any]]:
         return [parked.payload for parked in self._pending.values()]
@@ -304,6 +340,14 @@ class PaperExecutor:
         await self._expire_pending(envelope.payload.get("reason", "halt"), envelope.event_time)
 
     async def _handle_tick(self, envelope: EventEnvelope) -> None:
+        # Retry a deferred close now that a price for this instrument has arrived.
+        instrument: str = envelope.payload.get("instrument", "")
+        if instrument in self._close_pending:
+            if instrument not in self._portfolio.positions:
+                self._close_pending.discard(instrument)  # closed by other means
+            elif await self.close_position(instrument, now=envelope.event_time):
+                self._close_pending.discard(instrument)
+                logger.info("paper_executor.close_pending_filled", instrument=instrument)
         # Drive the TTL sweep on the event clock so parked decisions expire even
         # when the operator never returns to act on them.
         if self._pending:
@@ -362,16 +406,40 @@ class PaperExecutor:
     async def _handle_thesis_invalidated(self, envelope: EventEnvelope) -> None:
         # Flatten the instrument's open position when its thesis dies. Closing by
         # instrument matches the stop-loss and manual-close paths (the book holds
-        # at most one position per instrument). close_position is a no-op if
-        # nothing is open or no price is available, so an invalidation for an
-        # instrument we don't hold — or a re-fired one — is harmless.
+        # at most one position per instrument). An invalidation for an instrument
+        # we don't hold — or a re-fired one — is harmless.
         instrument: str = envelope.payload.get("instrument", "")
         if not instrument or instrument not in self._portfolio.positions:
             return
-        closed = await self.close_position(instrument, now=envelope.event_time)
-        if closed:
+        await self._close_or_defer(instrument, envelope.event_time,
+                                   reason=envelope.payload.get("reason", ""))
+
+    async def _close_or_defer(self, instrument: str, now: datetime, reason: str = "") -> None:
+        """Close the position; if it can't fill (no price yet) defer it to the
+        next tick instead of dropping the close. The defer is what stops a thesis
+        death that lands during equity after-hours — or before the first tick on
+        restart — from orphaning the position."""
+        if await self.close_position(instrument, now=now):
+            self._close_pending.discard(instrument)
             logger.info("paper_executor.closed_on_invalidation", instrument=instrument,
-                        reason=envelope.payload.get("reason", ""))
+                        reason=reason)
+        elif instrument in self._portfolio.positions:
+            # Still held ⇒ close_position no-op'd on a missing price, not a
+            # missing position. Retry when a tick arrives.
+            self._close_pending.add(instrument)
+            logger.info("paper_executor.close_deferred", instrument=instrument, reason=reason)
+
+    async def reconcile_orphans(self, instruments: list[str], now: datetime) -> None:
+        """Close (or defer) positions whose governing thesis is no longer active.
+
+        Run once at startup. close-on-invalidation is edge-triggered and
+        best-effort — the event is lost if it fired with no price, or before this
+        executor subscribed, or while the process was down. This re-enforces the
+        invariant 'a position lives only while its thesis is active' on every
+        restart, from the audit log rather than a live event."""
+        for instrument in instruments:
+            if instrument in self._portfolio.positions:
+                await self._close_or_defer(instrument, now, reason="thesis_dead_at_startup")
 
     # ------------------------------------------------------------------
 
