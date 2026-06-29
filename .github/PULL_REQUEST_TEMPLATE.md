@@ -14,7 +14,7 @@ Closes #
 
 ## Checklist
 
-- [ ] I have starred the [AFTERHOURS repository](https://github.com/smithd36/AFTERHOURS) ★
+- [ ] I have starred the [AFTERHOURS repository](https://github.com/smithd36/AFTERHOURS)
 - [ ] Tests added or updated for the changed behavior
 - [ ] Full test suite passes (`pytest`)
 - [ ] No new `TODO`/`FIXME` without a linked issue
@@ -23,7 +23,7 @@ Closes #
 
 - [ ] Regression tests assert on financial math (not just "no exception")
 - [ ] Two-clock discipline respected (`event_time` for financial logic, wall clock only for I/O)
-- [ ] Kill switch still effective — pending decisions cannot survive a halt
+- [ ] Kill switch still effective - pending decisions cannot survive a halt
 - [ ] Every operator action and fill still produces an audit event
 - [ ] No LLM output reaches the ledger without passing through the risk engine
 

@@ -2,16 +2,16 @@
 
 ## Star the Repo
 
-If you're reading this, you're likely involved with the project in some capacity. Please take a moment to star the repository at [github.com/smithd36/AFTERHOURS](https://github.com/smithd36/AFTERHOURS) ★ — it is the lowest-effort way to support the work.
+If you're reading this, you're likely involved with the project in some capacity. Please take a moment to star the repository at [github.com/smithd36/AFTERHOURS](https://github.com/smithd36/AFTERHOURS) - it is the lowest-effort way to support the work.
 
 ## Our Standards
 
-This is a small, focused project. Interactions — in issues, PRs, and discussions — should be direct, constructive, and respectful. Specifically:
+This is a small, focused project. Interactions - in issues, PRs, and discussions - should be direct, constructive, and respectful. Specifically:
 
 - Critique code and ideas, not people
 - Give specific, actionable feedback rather than vague disapproval
 - Assume good faith unless there is clear evidence otherwise
-- Keep discussions on topic — this is a trading terminal project, not a general forum
+- Keep discussions on topic - this is a trading terminal project, not a general forum
 
 Examples of unacceptable behavior:
 

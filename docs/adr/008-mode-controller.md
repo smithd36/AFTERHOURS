@@ -10,7 +10,7 @@
 
 The autonomy mode (ADR-004) governs whether a proposal is executed, queued for approval, simulated, or dropped. It is the most safety-critical piece of mutable state in the system.
 
-Originally the mode lived in **four independent places** — `app.state.autonomy_mode` (gateway), `RiskEngine._mode`, `PaperExecutor._mode`, and `OutcomeResolver._mode` — each kept in sync by separately handling `system.mode_changed`. This is the event bus working as designed for *derived* state (ADR-001), but mode is not derived state: it is a single authoritative value that gates real money.
+Originally the mode lived in **four independent places** - `app.state.autonomy_mode` (gateway), `RiskEngine._mode`, `PaperExecutor._mode`, and `OutcomeResolver._mode` - each kept in sync by separately handling `system.mode_changed`. This is the event bus working as designed for *derived* state (ADR-001), but mode is not derived state: it is a single authoritative value that gates real money.
 
 Two failure modes followed:
 
@@ -25,15 +25,15 @@ Per PLANNING §5, the mode must have exactly one owner, and a restart must fail 
 
 **A single `ModeController` (`core/mode.py`) owns the autonomy mode. Every component reads it; no component caches its own copy.**
 
-- The value changes in exactly one place — `ModeController.set()` (a validated operator transition) and `ModeController.halt()` (the kill switch). Both update the in-memory value **before** publishing the audit event, so any subscriber that reads `current` during fan-out already sees the new mode. The write-after-publish race is structurally impossible.
-- `system.mode_changed` and `risk.halt` remain the durable audit trail and still drive *reactive side effects* (e.g. the executor flushing parked decisions on demotion). They are no longer the mechanism by which any component learns the current mode — that is always a live read of `ModeController.current`.
+- The value changes in exactly one place - `ModeController.set()` (a validated operator transition) and `ModeController.halt()` (the kill switch). Both update the in-memory value **before** publishing the audit event, so any subscriber that reads `current` during fan-out already sees the new mode. The write-after-publish race is structurally impossible.
+- `system.mode_changed` and `risk.halt` remain the durable audit trail and still drive *reactive side effects* (e.g. the executor flushing parked decisions on demotion). They are no longer the mechanism by which any component learns the current mode - that is always a live read of `ModeController.current`.
 - Transition validation (the legal-move table) and the kill switch live on the controller, not scattered across routes. The mode route and halt route are thin: they call `set()` / `halt()` and translate an `InvalidModeTransition` into HTTP 422.
 - One `ModeController` is constructed in the gateway lifespan and injected into the risk engine, paper executor, and outcome resolver. The backtest runner constructs its own (fixed for the run).
 - **Restart fail-safe:** the mode is deliberately *not* persisted. Every process starts in OBSERVE and stays read-only until the operator explicitly promotes it, so a crash or redeploy can never silently resume live trading.
 
 ### Why not keep it event-synced?
 
-Event sync is correct for state that is a *projection* of the event stream (calibration metrics, the decision store). Mode is not a projection — it is the input that decides whether capital moves. For that, a missed event must be impossible to act on, which means there can be only one copy and it must be read, never replicated.
+Event sync is correct for state that is a *projection* of the event stream (calibration metrics, the decision store). Mode is not a projection - it is the input that decides whether capital moves. For that, a missed event must be impossible to act on, which means there can be only one copy and it must be read, never replicated.
 
 ---
 
@@ -41,9 +41,9 @@ Event sync is correct for state that is a *projection* of the event stream (cali
 
 ### Positive
 - No subsystem can trade under a stale mode: authority is a live read of one object. A dropped or reordered `system.mode_changed` can no longer cause silent disagreement.
-- The kill switch is atomic — `halt()` forces OBSERVE before emitting `risk.halt`, so a decision being re-validated inside a halt handler is already gated to OBSERVE.
+- The kill switch is atomic - `halt()` forces OBSERVE before emitting `risk.halt`, so a decision being re-validated inside a halt handler is already gated to OBSERVE.
 - Transition rules and validation have one home; routes carry no mode logic.
-- The audit trail is unchanged — the same events are still published and persisted.
+- The audit trail is unchanged - the same events are still published and persisted.
 
 ### Negative / constraints
 - The controller must be injected wherever mode is read; a component constructed without it (unit tests) falls back to a private controller seeded at `initial_mode`. Production and backtest paths must pass the shared instance explicitly.

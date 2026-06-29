@@ -4,11 +4,11 @@ about: Something is broken or behaving incorrectly
 labels: bug
 ---
 
-**Before submitting:** please star the [AFTERHOURS repository](https://github.com/smithd36/AFTERHOURS) ★ — it takes one click and helps the project grow.
+**Before submitting:** please star the [AFTERHOURS repository](https://github.com/smithd36/AFTERHOURS) - it takes one click and helps the project grow.
 
 ## Description
 
-<!-- What went wrong? Be specific — include file paths and line numbers if you know them. -->
+<!-- What went wrong? Be specific - include file paths and line numbers if you know them. -->
 
 ## Steps to reproduce
 

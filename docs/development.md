@@ -1,5 +1,8 @@
 # Development Guide
 
+> Part of the AFTERHOURS documentation set - see [`README.md`](README.md) for the index and current
+> project stage.
+
 ## Prerequisites
 
 | Tool | Version | Purpose |
@@ -37,7 +40,7 @@ cp .env.example .env
 
 The defaults in `.env.example` work for local development. The primary crypto feed (Kraken WebSocket v2) requires no API key, so Phases 0–5 run with no secrets. The optional equity stub feed activates only when `EQUITY_FEED_API_KEY` is set (Alpaca/Polygon free tier); without it the equity feed runs in no-op mode.
 
-If you are configuring private API access (future phases), add keys to `.env` only — never commit them. Keys must be **read-only** and **withdrawal-disabled**. See [`docs/adr/003-api-key-security.md`](adr/003-api-key-security.md).
+If you are configuring private API access (future phases), add keys to `.env` only - never commit them. Keys must be **read-only** and **withdrawal-disabled**. See [`docs/adr/003-api-key-security.md`](adr/003-api-key-security.md).
 
 ### 3. Frontend
 
@@ -52,13 +55,13 @@ npm install
 
 Two processes are needed: the Python backend and the Vite dev server.
 
-**Terminal 1 — backend:**
+**Terminal 1 - backend:**
 ```bash
 python -m gateway
 # Starts uvicorn on http://localhost:8000 with --reload
 ```
 
-**Terminal 2 — frontend:**
+**Terminal 2 - frontend:**
 ```bash
 cd frontend
 npm run dev
@@ -72,23 +75,28 @@ Open `http://localhost:5173`.
 
 | Endpoint | Description |
 |---|---|
-| `GET /api/health` | Liveness check — returns `{"status":"ok","timestamp":"..."}` |
-| `GET /api/status` | Gateway status — includes `connected_clients` count |
-| `WS /ws` | Event stream — sends `EventEnvelope` JSON for all bus events |
+| `GET /api/health` | Liveness check - returns `{"status":"ok","timestamp":"..."}` |
+| `GET /api/status` | Gateway status - includes `connected_clients` count |
+| `WS /ws` | Event stream - sends `EventEnvelope` JSON for all bus events |
 | `GET /api/events/recent?types=…&limit=…` | Recent events from the audit log (UI rehydration) |
 | `GET /api/mode` / `POST /api/mode` | Read / change autonomy mode (validated transitions) |
 | `GET /api/decisions` | All tracked decisions |
 | `GET /api/decisions/pending` | Decisions awaiting operator action (Assisted mode) |
 | `POST /api/decisions/{id}/execute` | Operator executes a pending decision |
 | `POST /api/decisions/{id}/reject` | Operator rejects a pending decision |
-| `GET /api/portfolio` | Paper portfolio snapshot — cash, positions, P&L |
+| `GET /api/portfolio` | Paper portfolio snapshot - cash, positions, P&L |
 | `POST /api/portfolio/positions/{instrument}/close` | Close an open paper position |
-| `POST /api/halt` | Kill switch — emits `risk.halt`, forces OBSERVE mode |
+| `GET /api/portfolio/trades?date=…` | Fills for a NYSE day (today from the ledger; past dates from the event store) |
+| `POST /api/halt` | Kill switch - emits `risk.halt`, forces OBSERVE mode |
 | `GET /api/calibration` | ECE + reliability buckets, overall and per autonomy mode |
 | `GET /api/calibration/gates` | Appendix B graduation-gate readiness (criteria + deferred list) |
+| `GET /api/analytics` | Equity curve + Sharpe/Sortino/volatility/VaR/drawdown (economic gate read side) |
 | `GET /api/watchlist` | List active watchlist entries (`instrument`, `market`, `added_at`) |
-| `POST /api/watchlist` | Add instrument — body `{"instrument": "AAPL", "market": "equity"}` |
+| `POST /api/watchlist` | Add instrument - body `{"instrument": "AAPL", "market": "equity"}` |
 | `DELETE /api/watchlist/{instrument}` | Remove instrument from watchlist |
+| `GET /api/discovery` | Ranked discovery candidates (on-demand confluence projection over unwatched names) |
+| `GET /api/discovery/{instrument}/analysis` | Lazy per-candidate AI analyst pass (why-interesting + counter-signals) |
+| `GET /api/chart?symbol=…&range=…` | Daily + intraday OHLC for a symbol (Kraken crypto / Alpaca equity) |
 
 ---
 
@@ -107,12 +115,12 @@ pytest tests/ingestion/coinbase/
 pytest tests/gateway/
 ```
 
-Tests run without network access — all external dependencies (Kraken/Coinbase WS, equity REST, RSS, DB) are replaced by fakes or in-memory adapters in the test fixtures.
+Tests run without network access - all external dependencies (Kraken/Coinbase WS, equity REST, RSS, DB) are replaced by fakes or in-memory adapters in the test fixtures.
 
 Key fixtures:
-- `InMemoryEventStore` — event store backed by a list; exposes `.events` for assertions
-- `test_lifespan` in `tests/gateway/test_app.py` — wires real bus, no feed, no DB
-- `FakeWebSocket` in `tests/gateway/test_broadcaster.py` — satisfies `WebSocketLike` protocol
+- `InMemoryEventStore` - event store backed by a list; exposes `.events` for assertions
+- `test_lifespan` in `tests/gateway/test_app.py` - wires real bus, no feed, no DB
+- `FakeWebSocket` in `tests/gateway/test_broadcaster.py` - satisfies `WebSocketLike` protocol
 
 ---
 
@@ -148,7 +156,7 @@ WAL mode is enabled (`PRAGMA journal_mode=WAL`) so reads and writes do not block
 To reset the database during development:
 ```bash
 rm afterhours.db afterhours.db-wal afterhours.db-shm 2>/dev/null; true
-# Restart the backend — it will recreate and migrate
+# Restart the backend - it will recreate and migrate
 ```
 
 ---
@@ -200,9 +208,9 @@ Variables are loaded from `.env` by pydantic-settings. All settings classes use 
 
 ---
 
-## LLM Providers — Rate Limiting & Resilience
+## LLM Providers - Rate Limiting & Resilience
 
-Signal bursts (many instruments firing theses/decisions at once) can spike well past a provider's **per-minute** limit even when daily volume is tiny — this is the usual cause of free-tier `429`s. The LLM layer smooths and absorbs those bursts so a transient limit doesn't drop a thesis or decision.
+Signal bursts (many instruments firing theses/decisions at once) can spike well past a provider's **per-minute** limit even when daily volume is tiny - this is the usual cause of free-tier `429`s. The LLM layer smooths and absorbs those bursts so a transient limit doesn't drop a thesis or decision.
 
 **Where it sits.** `create_provider()` wraps the real provider in a `ThrottledProvider` (`reasoning/llm/throttle.py`), and `gateway/app.py` wraps *that* in `CachingProvider`:
 
@@ -231,7 +239,7 @@ If `remaining_requests` hits 0 it's a requests-per-minute limit (lower `LLM_MAX_
 
 ### Caveats
 
-- **`LLM_MAX_RPM` defaults assume one provider account per process.** Provider rate limits are enforced **per-account (organization), not per-API-key** — multiple keys under one account share one bucket. If N instances share a single free account, set each box's `LLM_MAX_RPM` so the **sum** stays under the account's ceiling (e.g. 3 boxes on one Groq account ≈ `LLM_MAX_RPM=8` each, not the 25 default). Give each instance its own account to use the full default.
+- **`LLM_MAX_RPM` defaults assume one provider account per process.** Provider rate limits are enforced **per-account (organization), not per-API-key** - multiple keys under one account share one bucket. If N instances share a single free account, set each box's `LLM_MAX_RPM` so the **sum** stays under the account's ceiling (e.g. 3 boxes on one Groq account ≈ `LLM_MAX_RPM=8` each, not the 25 default). Give each instance its own account to use the full default.
 - **JSON mode is provider-dependent.** Groq and Mistral support `response_format=json_object`; some OpenRouter models reject it and return a `400`. Set `LLM_JSON_MODE=false` for those.
 - **The throttle is a smoother, not a multiplier.** It paces you under a limit; it does not raise it. If you're genuinely over a provider's sustained capacity, you need a higher tier, more accounts, or a different provider.
 - **Anthropic/OpenAI/Ollama are unthrottled by default.** They have generous limits (paid) or none (local). Set `LLM_MAX_RPM` > 0 to throttle them too.
@@ -251,13 +259,13 @@ npm run typecheck  # tsc --noEmit (no emit, type-check only)
 npm run lint       # eslint
 ```
 
-**Tailwind v4:** Uses `@tailwindcss/vite` plugin — no PostCSS config needed. All theme tokens are defined in `src/index.css` using `@theme inline` and CSS custom properties.
+**Tailwind v4:** Uses `@tailwindcss/vite` plugin - no PostCSS config needed. All theme tokens are defined in `src/index.css` using `@theme inline` and CSS custom properties.
 
 **Path alias:** `@/` maps to `src/`. Configured in both `vite.config.ts` and `tsconfig.app.json`.
 
 **shadcn/ui:** New-york style, zinc base, CSS variables enabled. Components are generated into `src/components/ui/`. Run `npx shadcn@latest add <component>` from the `frontend/` directory to add new components.
 
-**Dev proxy:** Vite proxies `/api` and `/ws` to `localhost:8000`. The frontend code uses relative URLs — no hardcoded backend addresses.
+**Dev proxy:** Vite proxies `/api` and `/ws` to `localhost:8000`. The frontend code uses relative URLs - no hardcoded backend addresses.
 
 ---
 
@@ -266,7 +274,7 @@ npm run lint       # eslint
 The backtest CLI replays a recorded event range through the full pipeline and writes a JSON run artifact:
 
 ```bash
-# Replay all recorded history (LLM responses served from cache — free)
+# Replay all recorded history (LLM responses served from cache - free)
 python -m backtest
 
 # Replay a specific window

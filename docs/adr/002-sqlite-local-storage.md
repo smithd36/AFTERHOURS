@@ -10,11 +10,11 @@
 
 Every event published to the bus must be persisted before fan-out (see ADR-001). The storage layer must:
 
-1. **Be append-only** — events are immutable once written. No updates, no deletes.
-2. **Support concurrent reads during writes** — the gateway WebSocket handler reads recent events while the ingestion feed is writing new ones continuously.
-3. **Require zero ops overhead in Phase 0** — no separate database process, no connection pooling config, no cluster to manage.
-4. **Support the two-clock invariant** — `event_time` (source clock) and `ingest_time` (our clock) must both be stored as-is without coercion.
-5. **Have a clear upgrade path** — when Phase 4 (live execution) demands higher write throughput or multi-host access, we need to be able to swap the store without changing the `EventStore` protocol.
+1. **Be append-only** - events are immutable once written. No updates, no deletes.
+2. **Support concurrent reads during writes** - the gateway WebSocket handler reads recent events while the ingestion feed is writing new ones continuously.
+3. **Require zero ops overhead in Phase 0** - no separate database process, no connection pooling config, no cluster to manage.
+4. **Support the two-clock invariant** - `event_time` (source clock) and `ingest_time` (our clock) must both be stored as-is without coercion.
+5. **Have a clear upgrade path** - when Phase 4 (live execution) demands higher write throughput or multi-host access, we need to be able to swap the store without changing the `EventStore` protocol.
 
 ---
 
@@ -46,7 +46,7 @@ PRAGMA journal_mode = WAL;
 PRAGMA synchronous = NORMAL;
 ```
 
-WAL (Write-Ahead Logging) allows concurrent readers during a write transaction. Without it, a write locks the file and blocks all readers until the commit completes — unacceptable for the WebSocket gateway which reads recent events while the feed writes continuously. `PRAGMA synchronous = NORMAL` retains crash safety for most scenarios while avoiding the performance cost of `FULL`.
+WAL (Write-Ahead Logging) allows concurrent readers during a write transaction. Without it, a write locks the file and blocks all readers until the commit completes - unacceptable for the WebSocket gateway which reads recent events while the feed writes continuously. `PRAGMA synchronous = NORMAL` retains crash safety for most scenarios while avoiding the performance cost of `FULL`.
 
 ### Idempotency
 
@@ -78,15 +78,15 @@ Tests use `InMemoryEventStore`. Production uses `SqliteEventStore`. The `InProce
 ## Consequences
 
 ### Positive
-- Zero external dependencies — just aiosqlite wrapping the stdlib sqlite3.
-- WAL mode makes readers and writers non-blocking — ingestion and gateway can run concurrently without contention.
-- `INSERT OR IGNORE` makes event publishing idempotent — safe to replay from reconnects.
-- Full audit trail from day one — every published event is on disk.
+- Zero external dependencies - just aiosqlite wrapping the stdlib sqlite3.
+- WAL mode makes readers and writers non-blocking - ingestion and gateway can run concurrently without contention.
+- `INSERT OR IGNORE` makes event publishing idempotent - safe to replay from reconnects.
+- Full audit trail from day one - every published event is on disk.
 - `EventStore` protocol means swapping to Postgres or Turso is a one-file change.
 
 ### Negative / constraints
-- SQLite is single-writer — concurrent writes from multiple processes are not possible. This is acceptable for Phase 0–3 (single process). If execution isolation requires a separate process in Phase 4, the bus transport must be extracted at the same time (see ADR-001 transport table).
-- No streaming queries — consumers that need recent events must poll or be delivered via the bus fan-out. There is no `LISTEN/NOTIFY` equivalent.
+- SQLite is single-writer - concurrent writes from multiple processes are not possible. This is acceptable for Phase 0–3 (single process). If execution isolation requires a separate process in Phase 4, the bus transport must be extracted at the same time (see ADR-001 transport table).
+- No streaming queries - consumers that need recent events must poll or be delivered via the bus fan-out. There is no `LISTEN/NOTIFY` equivalent.
 - TEXT timestamp storage means time-range queries require ISO-8601 string comparison (which is lexicographically correct for UTC timestamps, so this works correctly as long as the format is consistent).
 
 ---

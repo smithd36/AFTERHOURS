@@ -1,4 +1,4 @@
-# ADR-006: LLM Thesis Layer — Pluggable Providers and Prompt-Level JSON
+# ADR-006: LLM Thesis Layer - Pluggable Providers and Prompt-Level JSON
 
 **Status:** Accepted
 **Date:** 2026-06-09
@@ -26,7 +26,7 @@ required:
 
 A single `async complete(messages, *, max_tokens) -> str` interface abstracts all
 providers. Concrete implementations are lazy-imported so uninstalled SDKs do not
-cause import errors — only a failure when that provider is actually selected.
+cause import errors - only a failure when that provider is actually selected.
 
 The factory (`create_provider`) validates the required API key at startup and raises
 a clear `ValueError` before any requests are made.
@@ -42,7 +42,7 @@ a clear `ValueError` before any requests are made.
 | `anthropic` | `anthropic` SDK | Paid; native system-message separation |
 | `openai` | `openai` SDK | Paid |
 
-Groq, Mistral, and OpenRouter all use a single `OpenAICompatibleProvider` class —
+Groq, Mistral, and OpenRouter all use a single `OpenAICompatibleProvider` class -
 they share the same request/response shape and only differ in `base_url` and API key.
 
 ### 2. Prompt-level JSON extraction with one retry
@@ -53,7 +53,7 @@ especially on Ollama), the generator:
 1. Prompts the model to return a specific JSON schema with no surrounding text.
 2. Strips markdown code fences and extracts the first `{...}` block via regex.
 3. On parse failure, appends the bad response and a correction request, then retries once.
-4. If the second attempt also fails, logs a warning and drops the generation — no
+4. If the second attempt also fails, logs a warning and drops the generation - no
    partial or malformed thesis is emitted.
 
 This approach works identically across all six providers without branching logic.
@@ -89,7 +89,7 @@ a parseable UUID are silently skipped rather than failing the generation.
   with no API spend required.
 - JSON extraction without JSON mode means identical code paths for all providers,
   including local Ollama models that may not support structured output.
-- Thesis cites its evidence — supports the audit trail that is a project non-negotiable.
+- Thesis cites its evidence - supports the audit trail that is a project non-negotiable.
 
 ### Negative / constraints
 - Prompt-level JSON is less reliable than native JSON mode. The one-retry mechanism
@@ -121,10 +121,10 @@ Neither reverses the original decisions; both are additive and opt-out.
 as the fallback.** Decision #2 (prompt-level JSON, *no* provider-specific JSON modes) was
 chosen for uniform code paths. In practice the OpenAI-compatible providers (Groq, Mistral)
 support `response_format=json_object`, which makes valid JSON on the first try and removes
-most of the one-retry round-trips — meaningful when those retries were doubling calls against
+most of the one-retry round-trips - meaningful when those retries were doubling calls against
 a tight per-minute rate limit. So `OpenAICompatibleProvider` now sets `response_format` by
 default (`LLM_JSON_MODE`, default on). The prompt-level `_extract_json` + one-retry path is
-**unchanged** and still runs — it remains the cross-provider contract (and the only path for
+**unchanged** and still runs - it remains the cross-provider contract (and the only path for
 Ollama/Anthropic, which don't go through this provider). Caveat: some OpenRouter models reject
 `response_format` with a `400`; set `LLM_JSON_MODE=false` for those.
 
@@ -134,6 +134,6 @@ is now `CachingProvider → ThrottledProvider → <provider>`: a requests-per-mi
 concurrency cap (`reasoning/llm/throttle.py`, auto-on for the free providers) smooths bursts,
 and `OpenAICompatibleProvider` owns a Retry-After-aware retry loop that logs the rate-limit
 headers (`llm.rate_limited`). The throttle sits *inside* the cache, so cache hits never wait.
-Key caveat: provider limits are **per-account, not per-key** — instances sharing one free
+Key caveat: provider limits are **per-account, not per-key** - instances sharing one free
 account share one bucket, so `LLM_MAX_RPM` must be split across them. Full operational detail
-and tuning: `docs/development.md` → *LLM Providers — Rate Limiting & Resilience*.
+and tuning: `docs/development.md` → *LLM Providers - Rate Limiting & Resilience*.

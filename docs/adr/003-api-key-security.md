@@ -1,6 +1,6 @@
 # ADR-003: API Key Security Policy
 
-**Status:** Accepted — binding, non-negotiable
+**Status:** Accepted - binding, non-negotiable
 **Date:** 2026-06-09
 **Deciders:** @smithd36
 
@@ -8,7 +8,7 @@
 
 ## Context
 
-AFTERHOURS will eventually place orders with real money via exchange APIs. A compromised API key with withdrawal permissions would allow an attacker to drain the account. A compromised key with trade permissions could cause catastrophic losses. These risks require explicit, binding policy — not just convention.
+AFTERHOURS will eventually place orders with real money via exchange APIs. A compromised API key with withdrawal permissions would allow an attacker to drain the account. A compromised key with trade permissions could cause catastrophic losses. These risks require explicit, binding policy - not just convention.
 
 ---
 
@@ -17,9 +17,9 @@ AFTERHOURS will eventually place orders with real money via exchange APIs. A com
 ### Rule 1: Read-only, withdrawal-disabled keys only
 
 **All API keys used in this system must be:**
-- **Read-only** — no trading permissions for Phase 0–2 (data only)
-- **Withdrawal-disabled** — this permission must be explicitly disabled on the exchange, not just absent from the key scope
-- **Trade-enabled only when a specific phase requires it** — and only after the risk engine and kill switch are fully operational
+- **Read-only** - no trading permissions for Phase 0–2 (data only)
+- **Withdrawal-disabled** - this permission must be explicitly disabled on the exchange, not just absent from the key scope
+- **Trade-enabled only when a specific phase requires it** - and only after the risk engine and kill switch are fully operational
 
 Never create a key with withdrawal permissions for use with this system. If an exchange does not allow creating keys without withdrawal permissions, do not use that exchange.
 
@@ -33,7 +33,7 @@ Real API keys never appear in:
 
 `.env` is in `.gitignore`. `.env.example` contains only placeholders, never real values.
 
-If a key is accidentally committed, it must be revoked immediately on the exchange — not just removed in a follow-up commit. Git history preserves the exposure.
+If a key is accidentally committed, it must be revoked immediately on the exchange - not just removed in a follow-up commit. Git history preserves the exposure.
 
 ### Rule 3: Keys live in `.env` only
 
@@ -50,7 +50,7 @@ The Coinbase Advanced Trade public WebSocket endpoint does not require authentic
 | Mechanism | How it enforces the policy |
 |---|---|
 | `.gitignore` | Ignores `.env` and `.env.*` (except `.env.example`) |
-| `.env.example` | Template contains only variable names and comments — no real values |
+| `.env.example` | Template contains only variable names and comments - no real values |
 | `pydantic-settings` | Settings classes load from env vars; no defaults for key fields |
 | Code review | Any PR adding a key string to source is blocked |
 
@@ -61,11 +61,11 @@ The Coinbase Advanced Trade public WebSocket endpoint does not require authentic
 ### Positive
 - Worst-case blast radius from a key leak: attacker can read account balances and order history. Cannot trade. Cannot withdraw funds.
 - Audit trail of when keys were introduced (git log on `.env.example`).
-- Clear policy removes ambiguity — "I'll just put it here temporarily" is explicitly prohibited.
+- Clear policy removes ambiguity - "I'll just put it here temporarily" is explicitly prohibited.
 
 ### Negative / constraints
-- Slightly more setup friction — developers must configure `.env` manually before running.
-- When Phase 4 introduces trading keys, the permissioning model must be revisited — those keys will need trade scope but must remain withdrawal-disabled.
+- Slightly more setup friction - developers must configure `.env` manually before running.
+- When Phase 4 introduces trading keys, the permissioning model must be revisited - those keys will need trade scope but must remain withdrawal-disabled.
 
 ---
 
@@ -74,12 +74,12 @@ The Coinbase Advanced Trade public WebSocket endpoint does not require authentic
 ### Coinbase Advanced Trade
 - Create keys at: Coinbase → Settings → API
 - Required permissions for Phase 4: `View`, `Trade` on specific portfolios
-- `Withdraw` must be unchecked — verify this explicitly after key creation
-- Keys are scoped to portfolios, not the full account — create a dedicated portfolio for AFTERHOURS with limited funding
+- `Withdraw` must be unchecked - verify this explicitly after key creation
+- Keys are scoped to portfolios, not the full account - create a dedicated portfolio for AFTERHOURS with limited funding
 
 ### Kraken (alternate)
 - Create keys at: Kraken → Security → API
-- Withdrawal permissions are a separate checkbox — verify it is off
+- Withdrawal permissions are a separate checkbox - verify it is off
 - IP allowlisting is available and recommended
 
 ---

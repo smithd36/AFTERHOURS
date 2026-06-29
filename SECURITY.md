@@ -7,10 +7,10 @@ AFTERHOURS is a trading terminal that, in Phase 6+, operates with live brokerage
 The following are in scope:
 
 - Authentication bypass on any gateway route (`/api/halt`, `/api/mode`, `/api/decisions/*`, `/ws`)
-- Kill-switch bypass — any path where a halted system can still execute a trade
-- Audit trail manipulation — any way to execute an action without producing an event
-- Credential exposure — API keys, broker tokens, or session tokens leaked via logs, responses, or storage
-- Risk engine bypass — any path where a trade can be filled without passing through `RiskEngine.evaluate()`
+- Kill-switch bypass - any path where a halted system can still execute a trade
+- Audit trail manipulation - any way to execute an action without producing an event
+- Credential exposure - API keys, broker tokens, or session tokens leaked via logs, responses, or storage
+- Risk engine bypass - any path where a trade can be filled without passing through `RiskEngine.evaluate()`
 - Dependency vulnerabilities with a clear exploitation path in this context
 
 The following are out of scope:

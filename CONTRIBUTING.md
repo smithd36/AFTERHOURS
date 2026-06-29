@@ -1,14 +1,14 @@
 # Contributing to AFTERHOURS
 
-AFTERHOURS is a single-operator AI trading terminal licensed under the [Elastic License 2.0](LICENSE). It is source-available, not open-source in the traditional sense — the license prohibits offering the software as a managed service. Contributions are welcome within those terms.
+AFTERHOURS is a single-operator AI trading terminal licensed under the [Elastic License 2.0](LICENSE). It is source-available, not open-source in the traditional sense - the license prohibits offering the software as a managed service. Contributions are welcome within those terms.
 
 ---
 
 ## Star the Repo
 
-Before contributing in any form — opening an issue, submitting a PR, or requesting a feature — please star the repository on GitHub. It is the simplest way to support the project and helps surface it for others building in the same space.
+Before contributing in any form - opening an issue, submitting a PR, or requesting a feature - please star the repository on GitHub. It is the simplest way to support the project and helps surface it for others building in the same space.
 
-[github.com/smithd36/AFTERHOURS](https://github.com/smithd36/AFTERHOURS) → ★ Star
+[github.com/smithd36/AFTERHOURS](https://github.com/smithd36/AFTERHOURS) → Star
 
 ---
 
@@ -83,7 +83,7 @@ Areas: `risk`, `portfolio`, `gateway`, `ingestion`, `reasoning`, `core`, `fronte
 Use the PR template. Every PR must:
 
 1. Have a linked issue (or be a direct fix for a tracked bug).
-2. Include tests that cover the changed behavior — especially for anything touching the risk engine, ledger, or executor.
+2. Include tests that cover the changed behavior - especially for anything touching the risk engine, ledger, or executor.
 3. Pass the full test suite.
 4. Not introduce new `TODO`/`FIXME` markers without an accompanying issue.
 

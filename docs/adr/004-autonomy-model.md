@@ -1,6 +1,6 @@
 # ADR-004: Graduated Autonomy Model
 
-**Status:** Accepted — binding, non-negotiable
+**Status:** Accepted - binding, non-negotiable
 **Date:** 2026-06-09
 **Deciders:** @smithd36
 
@@ -8,7 +8,7 @@
 
 ## Context
 
-AFTERHOURS will eventually execute trades with real capital, partly or fully initiated by an AI model. Unconstrained AI autonomy over a trading account is unacceptable — a miscalibrated model, a prompt injection, a regime break, or a software bug could cause large losses before a human has time to intervene.
+AFTERHOURS will eventually execute trades with real capital, partly or fully initiated by an AI model. Unconstrained AI autonomy over a trading account is unacceptable - a miscalibrated model, a prompt injection, a regime break, or a software bug could cause large losses before a human has time to intervene.
 
 The autonomy model must:
 1. Start with zero AI agency over real capital.
@@ -24,7 +24,7 @@ The autonomy model must:
 
 | Mode | Human role | AI role | Capital at risk |
 |---|---|---|---|
-| **Observe** | Monitors only | Generates theses and proposals — no action taken | None |
+| **Observe** | Monitors only | Generates theses and proposals - no action taken | None |
 | **Paper** | Monitors only | Full decision cycle, but orders go to paper account | Simulated only |
 | **Assisted** | Approves each trade | AI proposes; human approves or rejects before any order | Real, gated |
 | **Semi-auto** | Sets limits, monitors | AI executes within pre-approved size/risk limits | Real, bounded |
@@ -36,7 +36,7 @@ The system starts in **Observe** mode. No path to live capital without passing t
 
 The primary metric for mode promotion is **ECE (Expected Calibration Error)**, not P&L.
 
-A well-calibrated model that says "60% confident" is right approximately 60% of the time. This is measurable without market exposure (paper trading provides the sample). P&L is too noisy and too slow for early-phase evaluation — a model can be profitable by luck and still be dangerously miscalibrated.
+A well-calibrated model that says "60% confident" is right approximately 60% of the time. This is measurable without market exposure (paper trading provides the sample). P&L is too noisy and too slow for early-phase evaluation - a model can be profitable by luck and still be dangerously miscalibrated.
 
 ECE threshold for promotion from Paper to Assisted: `ECE < 0.10` over a minimum of 50 decisions.
 
@@ -54,8 +54,8 @@ Any of the following triggers an immediate demotion to the previous safe mode:
 | **Calibration drift** | Rolling ECE exceeds threshold over last N decisions |
 | **Drawdown breach** | Unrealised or realised loss exceeds configured limit |
 | **Recon error** | Position reconciliation fails or finds unexpected discrepancy |
-| **Model version change** | New model ID or breaking prompt change — recalibrate from scratch |
-| **Regime break** | Detected market regime change (Phase 5 — volatility, correlation) |
+| **Model version change** | New model ID or breaking prompt change - recalibrate from scratch |
+| **Regime break** | Detected market regime change (Phase 5 - volatility, correlation) |
 | **Prompt injection detected** | Untrusted content (news, social) appears in reasoning path |
 
 On demotion, a `system.mode_changed` event is published with `from_mode`, `to_mode`, and `trigger` fields. All demotion events are persisted.
@@ -81,7 +81,7 @@ class AutonomyMode(str, Enum):
     SUPERVISED = "supervised"
 ```
 
-Mode state is carried in `system.mode_changed` events and stored durably. All decision-making code reads the current mode before producing a `Decision` — the mode determines whether the proposal is executed, queued for approval, simulated, or dropped.
+Mode state is carried in `system.mode_changed` events and stored durably. All decision-making code reads the current mode before producing a `Decision` - the mode determines whether the proposal is executed, queued for approval, simulated, or dropped.
 
 ---
 
@@ -90,8 +90,8 @@ Mode state is carried in `system.mode_changed` events and stored durably. All de
 ### Positive
 - Zero path from "AI generates idea" to "real order placed" without demonstrated calibration.
 - Automatic demotion means the system responds to its own failures without requiring a human to notice in real time.
-- ECE as gate metric decouples "is the model calibrated?" from "is the market moving in our favour?" — the latter is outside our control, the former is not.
-- The kill switch is a hard constraint at the infrastructure level — it is not a UI button that can be ignored by application code.
+- ECE as gate metric decouples "is the model calibrated?" from "is the market moving in our favour?" - the latter is outside our control, the former is not.
+- The kill switch is a hard constraint at the infrastructure level - it is not a UI button that can be ignored by application code.
 
 ### Negative / constraints
 - ECE measurement requires a sufficient sample (50+ decisions) before any promotion. This means Paper mode lasts weeks or months in practice.
@@ -104,8 +104,8 @@ Mode state is carried in `system.mode_changed` events and stored durably. All de
 
 The `Decision` schema enforces the separation of duties required by this autonomy model:
 
-- `Proposal.size_usd` — set by the **sizing module**, not the LLM. The LLM cannot propose its own size.
-- `RiskAssessment.risk_engine_verdict` — set by the **risk engine**. A `rejected` verdict blocks execution regardless of confidence.
-- `Decision.status` — transitions follow the autonomy mode. In `Observe`, proposals never reach `executing`.
+- `Proposal.size_usd` - set by the **sizing module**, not the LLM. The LLM cannot propose its own size.
+- `RiskAssessment.risk_engine_verdict` - set by the **risk engine**. A `rejected` verdict blocks execution regardless of confidence.
+- `Decision.status` - transitions follow the autonomy mode. In `Observe`, proposals never reach `executing`.
 
-The model is not trusted to self-report its confidence accurately — hence ECE measurement as an external calibration check.
+The model is not trusted to self-report its confidence accurately - hence ECE measurement as an external calibration check.

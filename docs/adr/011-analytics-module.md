@@ -11,20 +11,20 @@
 The Phase 7A (live-trading) entry gate requires **"Sharpe > 0 net of modeled fees + slippage"**
 (`docs/phase-6-plan.md`). The system cannot measure this today:
 `GateTracker._paper_to_assisted` lists Sharpe under `deferred` with the note *"needs a return
-series"*. We compute trade-sequence economics (`economic_metrics` in `calibration/gates.py` —
+series"*. We compute trade-sequence economics (`economic_metrics` in `calibration/gates.py` -
 expectancy, win rate, profit factor, drawdown on the realized-trade curve) but nothing that
 requires a **time-series of returns**: Sharpe, Sortino, VaR/CVaR, Calmar, equity-curve drawdown.
 
-So new computation must land before 7A. The question this ADR settles is *where* it lives — folded
-into the existing subsystems, or broken out — and which existing computation, if any, moves with it.
+So new computation must land before 7A. The question this ADR settles is *where* it lives - folded
+into the existing subsystems, or broken out - and which existing computation, if any, moves with it.
 
 Two observations shape the decision:
 
 1. **The existing economic math is misplaced.** `economic_metrics()` is pure portfolio analytics
    that lives in `calibration/gates.py` only because the gate consumes it. Economic measurement and
    confidence calibration are deliberately *separate* gates (the UI already renders them as distinct
-   groups — `operational` / `calibration` / `economic`); they should be separate modules.
-2. **The new metrics need a capability nothing currently provides** — a mark-to-market equity curve
+   groups - `operational` / `calibration` / `economic`); they should be separate modules.
+2. **The new metrics need a capability nothing currently provides** - a mark-to-market equity curve
    sampled over time. The risk/return ratios are otherwise ~10-line pure functions over that series.
 
 ---
@@ -37,16 +37,16 @@ source-of-truth state and any metric the risk engine needs synchronously.**
 The dividing test: if the **risk engine or ledger needs it in real time to make a decision**
 (sizing, the daily-loss breaker) it stays in the ledger as current-state; if it is a
 **retrospective measurement over a sequence/series** for a gate or panel, it is analytics. By this
-test `total_value` looks like analytics but is not — it gates every order — while `economic_metrics`
+test `total_value` looks like analytics but is not - it gates every order - while `economic_metrics`
 looks like it belongs by the gate but is pure measurement.
 
 ### What moves into `analytics/`
 
-- **`economic_metrics()`** — moved whole from `calibration/gates.py`. It already takes a plain
+- **`economic_metrics()`** - moved whole from `calibration/gates.py`. It already takes a plain
   `Sequence[Decimal]`, so the move drags no coupling; `max_drawdown` rides along inside it.
   `calibration/gates.py` keeps `_economic_criteria()` (thresholds + pass/fail = gate *policy*),
   which now calls `analytics.economic_metrics(...)`. The `TradeBook` Protocol stays with the gate.
-- **Fill-pairing P&L reconstruction** — extracted from `gateway/routes/portfolio.py` (`/trades`,
+- **Fill-pairing P&L reconstruction** - extracted from `gateway/routes/portfolio.py` (`/trades`,
   the open→close pairing that re-derives realized P&L from `order.filled` events). The equity-curve
   projection needs the identical logic; extracting it now prevents three subtly-different copies of
   the P&L formula (route, equity curve, backtest attribution).
@@ -57,7 +57,7 @@ looks like it belongs by the gate but is pure measurement.
 |---|---|---|
 | `cash`, `positions`, `open/close_position`, fill handling | ledger | source of truth, state mutation |
 | `total_value`, `unrealized_pnl`, `equity_contribution` | ledger | risk engine reads these **synchronously at sizing time** |
-| `daily_realized_pnl` + rollover | ledger | the **daily-loss breaker** — live operational risk state |
+| `daily_realized_pnl` + rollover | ledger | the **daily-loss breaker** - live operational risk state |
 | `realized_trades` / `daily_trades` | ledger | raw *facts* analytics consumes, not metrics |
 | ECE, reliability buckets | calibration | north-star metric; kept separate from economic analytics by design |
 
@@ -77,19 +77,19 @@ over time.**
 ### The equity curve is an event-time-keyed read-side projection
 
 **No wall-clock timer.** Timer-based sampling does not fire during backtest replay and violates the
-two-clock rule. The curve is computed **on demand as a projection over the event store** — exactly
+two-clock rule. The curve is computed **on demand as a projection over the event store** - exactly
 as `/api/portfolio/trades` already reconstructs P&L from `order.filled` events. Daily marks come
 from fills plus the last `market.tick` per instrument per day, keyed by `event_time`. No new event
 type, no new stateful subscriber, replay-reproducible.
 
 ### Module shape
 
-- `analytics/metrics.py` — pure, stateless: `sharpe`, `sortino`, `var`, `cvar`, `calmar`,
+- `analytics/metrics.py` - pure, stateless: `sharpe`, `sortino`, `var`, `cvar`, `calmar`,
   `drawdown` (dollar + pct + duration), annualization helpers, and the moved `economic_metrics`.
-- `analytics/equity_curve.py` — builds the daily mark-to-market series from event-store fills +
+- `analytics/equity_curve.py` - builds the daily mark-to-market series from event-store fills +
   last-tick-per-day; on-demand projection; event-time keyed.
 - `gateway/routes/analytics.py` → `/api/analytics`.
-- `GateTracker` consumes Sharpe so the **deferred gate line becomes a measured criterion** — the
+- `GateTracker` consumes Sharpe so the **deferred gate line becomes a measured criterion** - the
   direct unblock for the Phase 7A entry gate.
 
 Analytics reads the portfolio / event store through a narrow structural interface (as `GateTracker`
@@ -107,7 +107,7 @@ to producers or the bus.
   future backtest attribution, instead of drifting copies.
 - The Sharpe entry-gate criterion becomes measurable, unblocking Phase 7A.
 - The refactor (move `economic_metrics`, extract the P&L helper) is behavior-preserving and lands
-  independently of the new return-series work — tests stay green at the seam.
+  independently of the new return-series work - tests stay green at the seam.
 
 ### Negative / constraints
 - The equity curve is recomputed from the event store per request rather than maintained

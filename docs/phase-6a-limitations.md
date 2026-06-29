@@ -1,12 +1,13 @@
-# Phase 6A — Known Limitations
+# Phase 6A - Known Limitations
 
-> Companion to [`docs/adr/010-roadmap-rescope-alt-data-phase6.md`](adr/010-roadmap-rescope-alt-data-phase6.md).
+> Part of the AFTERHOURS documentation set ([`README.md`](README.md) for the index). Companion to
+> [`adr/010-roadmap-rescope-alt-data-phase6.md`](adr/010-roadmap-rescope-alt-data-phase6.md).
 > Phase 6A ships **three free** alternative-data feeds live (insider, lobbying+contracts,
-> supply-chain) into the existing enrich-only pipeline. **Congress is built but deferred/dormant** —
+> supply-chain) into the existing enrich-only pipeline. **Congress is built but deferred/dormant** -
 > its only clean source (Quiver) went paid and the free JSON mirrors went dark (see Congress
 > section). Dark-pool / options flow (paid) is also deferred.
 >
-> Each limitation below is **deliberate scope, not a bug** — recorded with its impact and the
+> Each limitation below is **deliberate scope, not a bug** - recorded with its impact and the
 > upgrade path so nothing is rediscovered the hard way. Format: *limitation → impact → upgrade.*
 
 ---
@@ -34,7 +35,7 @@
 
 - **Only the `summary` reaches the LLM.** The thesis prompt renders `payload.summary`; structured
   fields (`direction`, `factor`, amounts) are not separately surfaced.
-  → *Impact:* correlation/factor de-duplication (the `factor` tag) is advisory — it relies on the
+  → *Impact:* correlation/factor de-duplication (the `factor` tag) is advisory - it relies on the
   LLM reading the summary plus the calibration layer as backstop, not on numeric enforcement.
   → *Upgrade:* render `factor`/`direction` in the prompt and cap per-factor conviction (ADR-010
   §correlation).
@@ -46,7 +47,7 @@
 
 ---
 
-## Insider — SEC Form 4 (`ingestion/insider/`)
+## Insider - SEC Form 4 (`ingestion/insider/`)
 
 - **Rolling-window completeness.** Polls EDGAR `getcurrent` (count=100, every 5 min); during the
   post-close filing surge (≈4:00–5:30pm ET) Form 4s can scroll off between polls.
@@ -79,14 +80,14 @@
 
 ---
 
-## Congress — Quiver (`ingestion/congress/`)
+## Congress - Quiver (`ingestion/congress/`)
 
-- **Deferred / dormant — no free source as of 2026-06-14.** Quiver removed its free API tier
+- **Deferred / dormant - no free source as of 2026-06-14.** Quiver removed its free API tier
   (cheapest now Hobbyist $30/mo, personal-use only), and the community free JSON mirrors
-  (House/Senate Stock Watcher S3 buckets) are now `403 AccessDenied` — the project went dormant.
+  (House/Senate Stock Watcher S3 buckets) are now `403 AccessDenied` - the project went dormant.
   The one still-live free source, the official House Clerk bulk
   (`disclosures-clerk.house.gov`), publishes only a filing-metadata XML index; the tickers/amounts
-  live in per-filing **scanned/handwritten PDFs** (OCR territory) — a disproportionate, brittle
+  live in per-filing **scanned/handwritten PDFs** (OCR territory) - a disproportionate, brittle
   build for the stalest signal in the set. The code is built against Quiver and wired into
   `default_lifespan`, but **no-ops cleanly without `QUIVER_API_TOKEN`**, so it costs nothing left
   dormant.
@@ -112,7 +113,7 @@
 
 ---
 
-## Government exposure — lobbying + contracts (`ingestion/govexposure/`)
+## Government exposure - lobbying + contracts (`ingestion/govexposure/`)
 
 - **Per-watched-equity only (no firehose).** Sources are name-keyed; the feed queries only watched
   equities.
@@ -142,7 +143,7 @@
 
 ---
 
-## Supply chain — 10-K customer concentration (`ingestion/supplychain/`)
+## Supply chain - 10-K customer concentration (`ingestion/supplychain/`)
 
 - **Coarse regex, not NLP.** Extracts a sentence containing *customer + revenue keyword +
   percentage ≥ threshold*.
@@ -177,7 +178,7 @@ use; revisit with counsel if scope changes (see the last subsection). Extends PL
 
 **Why 6A is clear for single-operator, own-capital use.** Every free feed consumes
 **public-record, post-disclosure** data, so there is no material-non-public-information (MNPI) or
-insider-trading exposure — the system acts on information that is already public when it arrives:
+insider-trading exposure - the system acts on information that is already public when it arrives:
 
 | Feed | Source | Status |
 |---|---|---|
@@ -187,7 +188,7 @@ insider-trading exposure — the system acts on information that is already publ
 | Gov contracts | USASpending | US government open data |
 | Supply chain | SEC 10-K filings | Public record |
 
-Acting on these as a private trader is legal precisely *because* the data is published — there is no
+Acting on these as a private trader is legal precisely *because* the data is published - there is no
 "front-running Congress" offense for trading the public STOCK Act feed.
 
 **The MNPI line is enforced in code.** Supply-chain is restricted to public 10-K filings only;
@@ -195,18 +196,18 @@ expert-network / channel-check sourcing is deliberately excluded (ADR-010, `Supp
 docstring). That is the one place this class of project typically strays into insider-trading
 territory, and 6A stays out of it by construction.
 
-**Regulatory posture (PLANNING §6.5).** Staying single-operator / own-capital — not managing others'
-money, not publishing signals as advice, not taking custody — is what keeps the project out of
+**Regulatory posture (PLANNING §6.5).** Staying single-operator / own-capital - not managing others'
+money, not publishing signals as advice, not taking custody - is what keeps the project out of
 advisor/broker/MSB territory. The event-store audit log doubles as compliance evidence.
 
 **Watch-items (the only two):**
-1. **Quiver Terms of Service** — the one commercial source, and **now paid** ($30/mo Hobbyist, no
-   commercial-use rights — personal consumption into a private terminal is within license). Only
+1. **Quiver Terms of Service** - the one commercial source, and **now paid** ($30/mo Hobbyist, no
+   commercial-use rights - personal consumption into a private terminal is within license). Only
    relevant if congress is reactivated on a paid token. Even then, **do not redistribute** Quiver's
-   data — if terminal output is shown to others or republished, the vendor license applies. The
+   data - if terminal output is shown to others or republished, the vendor license applies. The
    three live feeds carry no such restriction. (Same redistribution principle PLANNING §6.5 raises
    for market data.)
-2. **SEC fair-access User-Agent** — policy compliance, not legal risk. EDGAR requires a descriptive
+2. **SEC fair-access User-Agent** - policy compliance, not legal risk. EDGAR requires a descriptive
    User-Agent with contact info; the `*_USER_AGENT` settings default to placeholders that 403 and
    must be set before live use. Polling stays well within SEC's 10 req/s limit.
 

@@ -1,4 +1,4 @@
-# ADR-005: Exchange Feed Architecture — Kraken Primary, Coinbase Deferred
+# ADR-005: Exchange Feed Architecture - Kraken Primary, Coinbase Deferred
 
 **Status:** Accepted
 **Date:** 2026-06-09
@@ -10,12 +10,12 @@
 
 Phase 1 requires a reliable live market data feed. Two exchanges were planned (PLANNING §3): Coinbase Advanced Trade as primary and Kraken as alternate.
 
-During Phase 1 implementation, connecting to the Coinbase Advanced Trade WebSocket (`wss://advanced-trade-ws.coinbase.com/ws`) timed out at the opening handshake. Investigation confirmed that Coinbase now requires JWT authentication even for public ticker subscriptions — a policy change made in 2024 that was not in effect when the planning document was written.
+During Phase 1 implementation, connecting to the Coinbase Advanced Trade WebSocket (`wss://advanced-trade-ws.coinbase.com/ws`) timed out at the opening handshake. Investigation confirmed that Coinbase now requires JWT authentication even for public ticker subscriptions - a policy change made in 2024 that was not in effect when the planning document was written.
 
 Two paths were available:
 
-1. **Implement Coinbase JWT auth now** — generate a read-only, withdrawal-disabled API key and wire in the authentication flow.
-2. **Use Kraken as primary and defer Coinbase** — Kraken's WebSocket v2 (`wss://ws.kraken.com/v2`) provides equivalent public ticker data with zero authentication required.
+1. **Implement Coinbase JWT auth now** - generate a read-only, withdrawal-disabled API key and wire in the authentication flow.
+2. **Use Kraken as primary and defer Coinbase** - Kraken's WebSocket v2 (`wss://ws.kraken.com/v2`) provides equivalent public ticker data with zero authentication required.
 
 ---
 
@@ -28,7 +28,7 @@ Two paths were available:
 - **No auth means no key management risk in Phase 1–3.** Introducing real API keys before the risk engine and kill switch exist violates the layered safety model in ADR-003. Key management complexity should arrive at the same time as execution capability.
 - **Kraken is a Tier-1 exchange** with a well-documented, stable WebSocket API. Data quality is equivalent for the instruments we track (BTC-USD, ETH-USD).
 - **The Feed adapter pattern absorbs the swap cleanly.** Both `CoinbaseFeed` and `KrakenFeed` implement the same structural interface, publish identical `EventEnvelope(MARKET_TICK)` shapes with canonical instrument symbols, and are wired into the gateway lifespan identically. Switching back is a one-line change.
-- **Coinbase remains fully implemented.** `ingestion/coinbase/` is complete and correct. It is simply not started in `default_lifespan` until auth is configured. The implementation is not lost — it is held in reserve.
+- **Coinbase remains fully implemented.** `ingestion/coinbase/` is complete and correct. It is simply not started in `default_lifespan` until auth is configured. The implementation is not lost - it is held in reserve.
 
 ### Canonical symbol normalisation
 
@@ -51,11 +51,11 @@ Consequence: price alert conditions and any downstream feature engineering that 
 
 ### Positive
 - Zero API key configuration required for Phases 1–3.
-- Coinbase implementation preserved and ready — enabling it is a one-line gateway change.
+- Coinbase implementation preserved and ready - enabling it is a one-line gateway change.
 - Normalised tick format means no downstream code changes when Coinbase is added.
 
 ### Negative / constraints
-- Kraken ticks have no venue-side timestamp — `event_time == ingest_time`. Logged and accepted.
+- Kraken ticks have no venue-side timestamp - `event_time == ingest_time`. Logged and accepted.
 - When Coinbase is enabled alongside Kraken in a future phase, duplicate ticks for the same instrument will be published to the bus. Downstream consumers must tolerate or deduplicate them (by instrument + approximate time window).
 
 ---
