@@ -28,6 +28,7 @@ import httpx
 import structlog
 
 from core.bus.base import Bus
+from core.market_hours import is_equity_market_open
 from core.schemas.events import EventEnvelope, EventType
 
 from .settings import EquityFeedSettings
@@ -35,16 +36,13 @@ from .settings import EquityFeedSettings
 logger = structlog.get_logger(__name__)
 
 _EASTERN = ZoneInfo("America/New_York")
-_MARKET_OPEN = (9, 30)
-_MARKET_CLOSE = (16, 0)
 
 
 def _is_market_open() -> bool:
-    now_et = datetime.now(_EASTERN)
-    if now_et.weekday() >= 5:  # Saturday=5, Sunday=6
-        return False
-    t = (now_et.hour, now_et.minute)
-    return _MARKET_OPEN <= t < _MARKET_CLOSE
+    # One definition of NYSE regular hours lives in core.market_hours; the risk
+    # engine and executor gate on the same logic (keyed on event_time) so the
+    # feed, entries, and closes all agree on when the equity venue is open.
+    return is_equity_market_open(datetime.now(UTC))
 
 
 def _seconds_until_open() -> float:

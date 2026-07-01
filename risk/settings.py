@@ -29,3 +29,8 @@ class RiskSettings(BaseSettings):
     # Limits
     max_open_positions: int = 5
     max_daily_loss_pct: float = 0.05     # 5% daily loss → auto-halt
+
+    # Equity trading is session-aware: reject an entry whose venue is closed
+    # (NYSE regular hours) rather than opening at a stale off-hours mark. Crypto
+    # is unaffected (24/7). See docs/pre-phase-7-risk-review.md section 12.
+    equity_session_gating: bool = True

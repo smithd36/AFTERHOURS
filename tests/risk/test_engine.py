@@ -14,6 +14,11 @@ from core.schemas.decision import Side
 from core.schemas.events import AutonomyMode, EventEnvelope, EventType
 from portfolio.ledger import Portfolio
 from risk.engine import RiskEngine
+from risk.settings import RiskSettings
+
+# Eastern = EDT (UTC-4) in June 2026; 2026-06-29 is a Monday.
+_MARKET_OPEN_ET = datetime(2026, 6, 30, 18, 0, tzinfo=UTC)  # Tue 14:00 ET - open
+_MARKET_CLOSED = datetime(2026, 6, 27, 18, 0, tzinfo=UTC)   # Saturday - closed
 
 
 def _proposed_envelope(instrument: str = "BTC-USD") -> EventEnvelope:
@@ -106,6 +111,80 @@ async def test_paper_mode_approves_with_price(bus: InProcessBus, portfolio: Port
     assert len(approved) == 1
     size = Decimal(approved[0].payload["proposal"]["size_usd"])
     assert size > 0
+
+    await engine.stop()
+
+
+async def test_equity_entry_rejected_when_market_closed(
+    bus: InProcessBus, portfolio: Portfolio
+) -> None:
+    """An equity proposal whose event_time lands in a closed session is rejected
+    market_closed, even with a (stale) price available - no off-hours entry."""
+    engine = RiskEngine(bus, portfolio, initial_mode=AutonomyMode.PAPER)
+    await engine.start()
+    await bus.publish(_tick_envelope("AAPL", "200"))
+
+    rejected: list[EventEnvelope] = []
+    await bus.subscribe(EventType.DECISION_REJECTED, lambda e: rejected.append(e))
+
+    await bus.publish(_proposed_at("AAPL", _MARKET_CLOSED))
+    assert len(rejected) == 1
+    reasons = rejected[0].payload["risk"]["rejection_reasons"]
+    assert any("market_closed" in r for r in reasons)
+
+    await engine.stop()
+
+
+async def test_equity_entry_approved_during_session(
+    bus: InProcessBus, portfolio: Portfolio
+) -> None:
+    """The same equity proposal approves when its event_time is inside RTH."""
+    engine = RiskEngine(bus, portfolio, initial_mode=AutonomyMode.PAPER)
+    await engine.start()
+    await bus.publish(_tick_envelope("AAPL", "200"))
+
+    approved: list[EventEnvelope] = []
+    await bus.subscribe(EventType.DECISION_APPROVED, lambda e: approved.append(e))
+
+    await bus.publish(_proposed_at("AAPL", _MARKET_OPEN_ET))
+    assert len(approved) == 1
+
+    await engine.stop()
+
+
+async def test_crypto_entry_approved_off_hours(
+    bus: InProcessBus, portfolio: Portfolio
+) -> None:
+    """Crypto trades 24/7, so a weekend event_time still approves."""
+    engine = RiskEngine(bus, portfolio, initial_mode=AutonomyMode.PAPER)
+    await engine.start()
+    await bus.publish(_tick_envelope("BTC-USD", "50000"))
+
+    approved: list[EventEnvelope] = []
+    await bus.subscribe(EventType.DECISION_APPROVED, lambda e: approved.append(e))
+
+    await bus.publish(_proposed_at("BTC-USD", _MARKET_CLOSED))
+    assert len(approved) == 1
+
+    await engine.stop()
+
+
+async def test_session_gating_can_be_disabled(
+    bus: InProcessBus, portfolio: Portfolio
+) -> None:
+    """With equity_session_gating off, an off-hours equity entry is allowed."""
+    engine = RiskEngine(
+        bus, portfolio, initial_mode=AutonomyMode.PAPER,
+        settings=RiskSettings(equity_session_gating=False),
+    )
+    await engine.start()
+    await bus.publish(_tick_envelope("AAPL", "200"))
+
+    approved: list[EventEnvelope] = []
+    await bus.subscribe(EventType.DECISION_APPROVED, lambda e: approved.append(e))
+
+    await bus.publish(_proposed_at("AAPL", _MARKET_CLOSED))
+    assert len(approved) == 1
 
     await engine.stop()
 

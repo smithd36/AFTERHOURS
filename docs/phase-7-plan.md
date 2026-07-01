@@ -84,7 +84,8 @@ into "safe to risk real capital."
       shorts need borrow/margin) and keep untradeable shorts out of the paper book that seeds the
       gate. (§4)
 - [ ] **4. Slippage guard** - use marketable-limit orders with a max-slippage bound instead of naked
-      market orders; reject/hold when the spread exceeds the cap. Pairs with a basic liquidity floor. (§6)
+      market orders; reject/hold when the spread exceeds the cap. Pairs with the liquidity admission
+      floor (item 9). (§6)
 - [ ] **5. Venue trading-rule validation** - validate min notional / lot size / fractionability
       before submit; reject (don't silently round) when sizing can't be honored. (§5)
 - [ ] **6. Durable idempotency** - pass `client_order_id` to Alpaca for server-side dedup **and**
@@ -94,6 +95,10 @@ into "safe to risk real capital."
 - [ ] **8. Close the security entry-gate** - bind `127.0.0.1` + shared-secret token on the
       state-changing routes and WS, before any live key (also the gateway-hardening entry gate
       above). (§10)
+- [ ] **9. Liquidity admission floor + ADV-% size cap** - add a basic min-ADV / max-spread admission
+      floor and a cap on position size as a % of average daily volume to the risk engine (it is
+      liquidity-blind today); the live-safety subset of 6B.2, pulled forward so the slippage guard
+      (item 4) can actually fill. The breadth scanner / crypto-primary / auto-add stay in 6B.2. (§11)
 
 ### Scope
 - **`BrokerAdapter` ABC** parallel to `PaperExecutor`, sharing the existing `Order` structure and

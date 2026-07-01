@@ -22,6 +22,7 @@ from uuid import UUID
 import structlog
 
 from core.bus.base import Bus, Subscription
+from core.market_hours import is_market_open
 from core.mode import ModeController
 from core.pricing import quantize_price
 from core.schemas.decision import RiskAssessment, RiskVerdict, Side
@@ -116,6 +117,18 @@ class RiskEngine:
         # Observe mode: shadow decision, no execution
         if self._modes.current == AutonomyMode.OBSERVE:
             return (False, {}, ["observe_mode: shadow decision logged for calibration"])
+
+        # Equity trading is session-aware: reject an entry whose venue is closed
+        # rather than opening at a stale last price (live, an order the venue
+        # can't fill). Crypto is 24/7 so this never trips there. The thesis and
+        # decision are still generated and persisted - only the *trade* is gated.
+        # Keyed on the proposal's event_time so it stays replay-safe, and because
+        # evaluate() is reused to re-validate a parked ASSISTED decision at
+        # execution time, this also blocks an equity order executed off-hours.
+        # See docs/pre-phase-7-risk-review.md section 12.
+        if self._settings.equity_session_gating and not is_market_open(instrument, now):
+            return (False, {},
+                    [f"market_closed: {instrument} venue is closed; no off-hours entry"])
 
         portfolio_value = self._portfolio.total_value
 

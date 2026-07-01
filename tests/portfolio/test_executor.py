@@ -256,6 +256,67 @@ async def test_invalidation_without_price_defers_then_closes_on_next_tick(
     await executor.stop()
 
 
+# Saturday 14:00 ET (market closed); 2026-06-29 is a Monday.
+_MARKET_CLOSED = datetime(2026, 6, 27, 18, 0, tzinfo=UTC)
+
+
+async def test_equity_close_deferred_when_market_closed(
+    bus: InProcessBus, portfolio: Portfolio
+) -> None:
+    """A thesis death on an equity during a closed session must not fill at the
+    stale last price: the close is deferred and fills on the next tick (the open).
+    A price is available throughout, so this isolates the market-closed defer from
+    the existing no-price defer."""
+    executor = PaperExecutor(bus, portfolio, initial_mode=AutonomyMode.PAPER)
+    await executor.start()
+
+    await bus.publish(_tick("AAPL", "200"))
+    await bus.publish(_approved("AAPL", "500"))
+    assert "AAPL" in portfolio.positions
+
+    closes: list[EventEnvelope] = []
+    await bus.subscribe(
+        EventType.ORDER_FILLED,
+        lambda e: closes.append(e) if e.payload["action"] == "close" else None,
+    )
+
+    # Invalidation lands on a Saturday: defer despite the live mark.
+    await bus.publish(_thesis_invalidated("AAPL", event_time=_MARKET_CLOSED))
+    assert "AAPL" in portfolio.positions
+    assert closes == []
+
+    # A later tick (market open) fills the deferred close.
+    await bus.publish(_tick("AAPL", "199"))
+    assert "AAPL" not in portfolio.positions
+    assert len(closes) == 1
+
+    await executor.stop()
+
+
+async def test_crypto_close_not_deferred_off_hours(
+    bus: InProcessBus, portfolio: Portfolio
+) -> None:
+    """Crypto trades 24/7, so a thesis death closes immediately whatever the clock."""
+    executor = PaperExecutor(bus, portfolio, initial_mode=AutonomyMode.PAPER)
+    await executor.start()
+
+    await bus.publish(_tick("BTC-USD", "50000"))
+    await bus.publish(_approved("BTC-USD", "500"))
+    assert "BTC-USD" in portfolio.positions
+
+    closes: list[EventEnvelope] = []
+    await bus.subscribe(
+        EventType.ORDER_FILLED,
+        lambda e: closes.append(e) if e.payload["action"] == "close" else None,
+    )
+
+    await bus.publish(_thesis_invalidated("BTC-USD", event_time=_MARKET_CLOSED))
+    assert "BTC-USD" not in portfolio.positions
+    assert len(closes) == 1
+
+    await executor.stop()
+
+
 async def test_reconcile_orphans_closes_dead_thesis_positions(
     bus: InProcessBus, portfolio: Portfolio
 ) -> None:

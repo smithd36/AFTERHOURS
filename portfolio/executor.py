@@ -20,6 +20,7 @@ from uuid import UUID, uuid4
 import structlog
 
 from core.bus.base import Bus, Subscription
+from core.market_hours import is_market_open
 from core.mode import ModeController
 from core.pricing import quantize_price
 from core.schemas.decision import Fill, HumanAction, HumanActionType, Order, OrderType, Side
@@ -419,6 +420,17 @@ class PaperExecutor:
         next tick instead of dropping the close. The defer is what stops a thesis
         death that lands during equity after-hours — or before the first tick on
         restart — from orphaning the position."""
+        # Equity venue closed: defer to the next session open rather than filling
+        # at a stale last price. Deferred closes retry on the next tick (see
+        # _handle_tick), and equity ticks only resume at the open. Crypto is
+        # always open so this never trips there. Note this defers even when a
+        # (stale) mark exists, which the no-price path below would not catch. See
+        # docs/pre-phase-7-risk-review.md section 12.
+        if instrument in self._portfolio.positions and not is_market_open(instrument, now):
+            self._close_pending.add(instrument)
+            logger.info("paper_executor.close_deferred_market_closed",
+                        instrument=instrument, reason=reason)
+            return
         if await self.close_position(instrument, now=now):
             self._close_pending.discard(instrument)
             logger.info("paper_executor.closed_on_invalidation", instrument=instrument,

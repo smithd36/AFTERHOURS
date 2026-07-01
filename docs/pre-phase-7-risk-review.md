@@ -164,13 +164,13 @@ limit alternative.
 
 **Why it loses money live:** a market order into a thin book (low-liquidity name, off-hours, a
 news-driven dislocation) can fill catastrophically far from the last tick. The 0.1% paper slippage
-is a fiction for thin instruments. The system has **no liquidity admission floor** today (that's
-explicitly deferred to 6B.2 per `docs/architecture.md`), so it can already propose trades in names
+is a fiction for thin instruments. The system has **no liquidity admission floor** today (the floor
++ ADV-% cap are pulled forward from 6B.2 to 7A - see §11), so it can already propose trades in names
 with no depth.
 
 **Recommendation:** use **marketable limit orders** with a max-slippage bound (limit =
-`price·(1 + cap)`), and reject/hold when the spread exceeds the cap. Pairs naturally with the 6B.2
-liquidity floor - consider pulling a basic version forward to 7A.
+`price·(1 + cap)`), and reject/hold when the spread exceeds the cap. Pairs naturally with the
+liquidity admission floor (§11), now also pulled forward to 7A.
 
 **Plan coverage:** 7B recalibrates the friction *model*; it doesn't add a slippage *guard*.
 
@@ -248,6 +248,43 @@ still open as of this review.
 
 ---
 
+## 11. No liquidity admission floor or ADV participation cap - the risk engine is liquidity-blind (pulled forward from 6B.2)
+
+**Where:** `risk/engine.py:120-181` sizing path - size is computed from notional / volatility /
+portfolio value with **no** input for an instrument's tradable depth: no spread check, no minimum
+average-daily-volume (ADV) admission floor, and no cap on position size as a % of ADV.
+
+**What:** the engine sizes a position in any watched instrument identically whether it trades
+millions a day or a few thousand dollars. Two controls - a **liquidity admission floor** (don't
+trade names below a depth / ADV threshold) and an **ADV-% participation cap** (never take a position
+larger than a set % of average daily volume) - were scoped to **6B.2** as discovery-growth
+guardrails. They are also live-safety controls, and 6B.2 is **not** a prerequisite for 7A, so unless
+they are pulled forward the first real capital can flow into names the engine has no depth
+information about.
+
+**Why it loses money live:**
+- **Thin-name entry/exit.** A position in a low-ADV name can't be exited near the mark. The
+  slippage guard (§6) caps a single order's price deviation, but if there is simply no depth, a
+  bounded-slippage order won't fill and the synthetic stop (§1) can't get you out at the stop. The
+  floor is the *structural* pair to §6's order-level guard.
+- **Outsized positions you can't unwind.** With no ADV-% cap, the deterministic sizer can compute a
+  notional that is a large fraction of a small name's daily volume - a position that moves the market
+  against you on the way out and can't be flattened on a HALT (§8).
+- **The gate is measuring fictional liquidity.** As with §4, the paper book fills these
+  frictionlessly, so trades in names that are untradeable-at-size still feed the economic gate the
+  operator is about to act on.
+
+**Recommendation:** add a basic **liquidity admission floor** (reject proposals in instruments below
+a min-ADV / max-spread threshold) and an **ADV-% size cap** (clamp `size_usd` so the position stays
+under a configured % of average daily volume) to the risk engine before 7A. These are the
+live-safety subset of 6B.2; the breadth scanner, crypto-primary unlock, and auto-add control plane
+stay in 6B.2 (they widen the universe, they don't protect capital).
+
+**Plan coverage:** Now a 7A readiness item (was 6B.2). §6 references it as the structural pair to
+the slippage guard.
+
+---
+
 ## What's solid (so we don't regress it)
 
 - **Separation of duties holds.** The LLM never sets size; the risk engine is the final gate and
@@ -272,6 +309,8 @@ the standing review: the detailed findings (§1–§10 above) are the *why* behi
 
 The four load-bearing items - venue-resident stops (§1), a real realized+unrealized daily-loss
 brake (§2), long-only for 7A (§4), and a slippage guard (§6) - are what turn "the paper gate passed"
-into "safe to risk real capital." The paper book passing Appendix B is *necessary but not
+into "safe to risk real capital." The liquidity admission floor + ADV-% participation cap (§11) are
+pulled forward from 6B.2 to back the slippage guard - without depth admission, a bounded-slippage
+order in a thin name simply won't fill. The paper book passing Appendix B is *necessary but not
 sufficient*, because the paper executor's fills are frictionless and always succeed. The 7A exit
 checklist's "live fills match assumptions" is the real bar.
